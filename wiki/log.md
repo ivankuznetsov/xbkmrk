@@ -339,7 +339,7 @@ Append-only log of meaningful wiki updates.
 
 ## [2026-07-09T11:15:00Z] provider secret routing rebase refresh
 
-**Action:** Refreshed wiki coverage while rebasing PR #46 onto current `main`, preserving newer taxonomy/source-outage knowledge and adding provider credential routing facts.
+**Action:** Refreshed wiki coverage while rebasing PR #46 onto current `main`, preserving newer taxonomy/source-outage knowledge and adding provider credential routing facts, including diagnostic `auth show`.
 **Pages updated:** wiki/architecture.md, wiki/api.md, wiki/commands.md, wiki/data-model.md, wiki/dependencies.md, wiki/active-areas.md, wiki/decisions.md, wiki/gaps.md, wiki/index.md, wiki/log.md
-**Decision:** Provider API-key values stay out of repo/env-file docs and route through 1Password, the platform keychain, or env-only CI mode; `auth.toml` records routing metadata only.
+**Decision:** Provider API-key values stay out of repo/env-file docs and route through 1Password, the platform keychain, or env-only CI mode; `auth.toml` records routing metadata only. `auth show` is documented as a sensitive diagnostic command because it prints the resolved credential.
 **Source:** `lib/xbookmark/keystore/{provider,auth_config,resolver,one_password,keychain,libsecret}.rb`, `lib/xbookmark/cli/auth.rb`, README Secrets section, and PR #46 rebase conflict resolution.

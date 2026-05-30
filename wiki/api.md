@@ -68,6 +68,7 @@ Bookmark requests use 50-item pages and follow `meta.next_token`. Production tes
 - `~/.config/xbookmark/auth.toml` stores provider routing only: backend names and optional `op://` refs, never secret values. The file is written with mode `0600`.
 - `Xbookmark::Keystore::Resolver` is the runtime provider-key entry point. CI/env-forced mode reads canonical `XBOOKMARK_<PROVIDER>_KEY` environment variables; normal mode prefers `auth.toml` routing to 1Password or the platform keychain, then falls back to environment variables.
 - `xbookmark auth bind PROVIDER OP_REF` validates the 1Password reference shape and smoke-checks `op read` when available. `xbookmark auth login PROVIDER` stores an interactively entered key in the platform keychain without accepting it on argv.
+- `xbookmark auth show PROVIDER` prints the resolved credential for diagnostics and scripts. Use `auth list` when the value must remain hidden.
 
 ## Public Contract Notes
 

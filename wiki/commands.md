@@ -7,7 +7,7 @@ updated: 2026-07-09
 tags: [commands, cli]
 ---
 
-**TLDR**: The README and implementation are aligned around the currently implemented Thor CLI: auth login/bind/list/rm/status/refresh, backfill, sync, resync, reenrich, find, taxonomy audit/rebuild, doctor/doctor --fix, install, setup, and uninstall.
+**TLDR**: The README and implementation are aligned around the currently implemented Thor CLI: auth login/bind/list/show/rm/status/refresh, backfill, sync, resync, reenrich, find, taxonomy audit/rebuild, doctor/doctor --fix, install, setup, and uninstall.
 
 ## Fresh Setup Contract
 
@@ -32,6 +32,7 @@ Packaged binary installs also support running `xbookmark` with no arguments in a
 - `xbookmark auth login PROVIDER` prompts for a third-party provider key without echoing input, writes it to the platform keychain backend, and records keychain routing in `auth.toml`.
 - `xbookmark auth bind PROVIDER OP_REF` validates an `op://...` 1Password reference, smoke-checks it when the `op` CLI is available, and records 1Password routing without storing the secret value.
 - `xbookmark auth list` shows configured provider names and backends from `auth.toml` plus environment variables without printing secret values.
+- `xbookmark auth show PROVIDER` resolves and prints a provider credential for diagnostics and scripts, so it is intentionally more sensitive than `auth list`.
 - `xbookmark auth rm PROVIDER` removes provider routing and deletes the platform-keychain entry when the provider was routed to `keychain`.
 - `xbookmark auth status` reports whether an access token is present and still current; expired access tokens exit non-zero and point users at `auth refresh` or `auth login`.
 - `xbookmark auth refresh` uses the saved refresh token to rotate OAuth tokens immediately, reports the token destination on success, and exits non-zero with a direct `auth login` hint when X rejects the refresh token.
@@ -57,7 +58,7 @@ Provider credential resolution uses `Xbookmark::Keystore::Resolver`: exact `CI=t
 
 - `backfill`, `sync`, and `resync` all load config, open the SQLite state store, create an X API client, and delegate to `Xbookmark::Sync::Runner`.
 - `auth refresh` loads config, invokes `Xbookmark::X::Auth#refresh!`, and writes rotated tokens to the same destination as `auth login`.
-- `auth login PROVIDER`, `auth bind`, `auth list`, `auth rm`, and provider lookups delegate to `Xbookmark::Keystore::AuthConfig`, `Resolver`, and the selected platform/1Password backend.
+- `auth login PROVIDER`, `auth bind`, `auth list`, `auth show`, `auth rm`, and provider lookups delegate to `Xbookmark::Keystore::AuthConfig`, `Resolver`, and the selected platform/1Password backend.
 - `backfill` and `sync` first process cached pending/retry rows from SQLite. Rows with cached `payload_json` can be enriched without X; uncached legacy retry rows and new bookmark discovery still need X.
 - `sync` starts from the newest bookmark page and stops after a page with no new bookmarks; X `next_token` values are not treated as durable cursors between runs.
 - `find` delegates to `Xbookmark::Qmd::Searcher`.
