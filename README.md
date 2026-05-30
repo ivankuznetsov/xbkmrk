@@ -210,6 +210,59 @@ For compatibility with earlier local branches, `XBOOKMARK_VAULT`,
 `OBSIDIAN_VAULT_PATH`, and the `--vault` CLI option are still accepted as
 aliases. Prefer `XBOOKMARK_WIKI_PATH` and `--wiki` in new setups.
 
+### Secrets
+
+xbookmark stores third-party API keys (e.g. `openrouter`, `x`) outside the
+env file so they never land in a checked-in `.env` or in shell history.
+Routing for each provider lives in `~/.config/xbookmark/auth.toml`
+(mode 0600, no secret values); the actual key lives in 1Password, the
+host keychain, or the environment.
+
+At runtime the resolver tries, in order: CI env shortcut, `auth.toml`
+routing, then `XBOOKMARK_<PROVIDER>_KEY` from the environment.
+
+**Linux with 1Password CLI**
+
+```bash
+xbookmark auth bind openrouter op://Personal/OpenRouter/credential
+xbookmark auth bind x op://Personal/X/api_key
+xbookmark sync   # resolves via `op read` at runtime
+```
+
+**Linux vanilla (GNOME Keyring / KWallet / KeePassXC over libsecret)**
+
+```bash
+xbookmark auth login openrouter   # hidden prompt; never accepted on argv
+xbookmark sync
+```
+
+**macOS**
+
+```bash
+xbookmark auth login openrouter
+# Verify in Keychain Access.app: service "xbookmark", account "openrouter"
+```
+
+**CI / headless**
+
+Set `CI=true` (most CI runners already do) or `XBOOKMARK_KEYS_FROM_ENV=1`,
+then export the canonical env vars:
+
+```bash
+export CI=true
+export XBOOKMARK_OPENROUTER_KEY=...
+export XBOOKMARK_X_KEY=...
+xbookmark sync
+```
+
+Inspect or clean up configured providers:
+
+```bash
+xbookmark auth list           # never prints stored values
+xbookmark auth show openrouter # diagnostic; prints the resolved value
+xbookmark auth rm openrouter
+```
+
 ## Usage
 
 ### auth

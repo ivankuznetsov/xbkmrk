@@ -75,4 +75,25 @@ describe "README setup contract" do
     assert_includes commands_wiki, "xbookmark taxonomy audit"
     assert_includes commands_wiki, "xbookmark taxonomy rebuild [--apply]"
   end
+
+  it "documents the four provider-secret subcommands" do
+    %w[
+      xbookmark\ auth\ login\ openrouter
+      xbookmark\ auth\ bind\ openrouter
+      xbookmark\ auth\ list
+      xbookmark\ auth\ rm\ openrouter
+    ].each do |snippet|
+      assert_includes readme, snippet.gsub("\\ ", " ")
+    end
+  end
+
+  it "documents the CI env-shortcut and canonical env-var form" do
+    assert_includes readme, "XBOOKMARK_KEYS_FROM_ENV=1"
+    assert_includes readme, "XBOOKMARK_OPENROUTER_KEY"
+    assert_includes readme, "XBOOKMARK_X_KEY"
+  end
+
+  it "documents the auth.toml routing file path" do
+    assert_includes readme, "~/.config/xbookmark/auth.toml"
+  end
 end
