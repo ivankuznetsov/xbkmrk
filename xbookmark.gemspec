@@ -29,4 +29,5 @@ Gem::Specification.new do |spec|
   spec.add_dependency "base64", "~> 0.2"
   spec.add_dependency "ostruct", "~> 0.6"
   spec.add_dependency "webrick", "~> 1.8"
+  spec.add_dependency "tomlrb", "~> 2.0"
 end
