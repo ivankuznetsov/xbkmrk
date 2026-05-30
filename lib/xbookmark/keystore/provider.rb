@@ -25,13 +25,16 @@ module Xbookmark
       end
 
       def env_key
-        "XBOOKMARK_#{name.to_s.upcase}_KEY"
+        # Shells (notably bash) reject env-var names containing hyphens, so
+        # we translate provider hyphens into underscores: provider "foo-bar"
+        # resolves via XBOOKMARK_FOO_BAR_KEY.
+        "XBOOKMARK_#{name.to_s.upcase.tr("-", "_")}_KEY"
       end
 
       def legacy_env_key
         # Backwards-compat for the brainstorm's `XBOOKMARK_X_API_KEY`-style
         # name; the Resolver consults this in its env-fallback branch.
-        "XBOOKMARK_#{name.to_s.upcase}_API_KEY"
+        "XBOOKMARK_#{name.to_s.upcase.tr("-", "_")}_API_KEY"
       end
 
       def to_s
