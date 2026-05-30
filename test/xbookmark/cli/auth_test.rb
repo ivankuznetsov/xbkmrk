@@ -148,6 +148,31 @@ describe Xbookmark::CLI::Auth do
     end
   end
 
+  describe "show" do
+    it "prints the resolved credential via the Resolver" do
+      stub_platform_linux
+      keychain_double = mock("kc")
+      keychain_double.stubs(:get).with("openrouter").returns("sk-resolved")
+      Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
+      Xbookmark::Keystore::Libsecret.stubs(:new).returns(keychain_double)
+
+      cfg = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
+      cfg.bind_keychain("openrouter")
+
+      out, _err = run_cli("show", "openrouter")
+      assert_match(/sk-resolved/, out)
+    end
+
+    it "exits non-zero with the error message when nothing is configured" do
+      ENV.keys.grep(/\AXBOOKMARK_.+_KEY\z/).each { |k| ENV.delete(k) }
+      err = nil
+      assert_raises(SystemExit) do
+        _out, err_str = run_cli("show", "openrouter")
+        err = err_str
+      end
+    end
+  end
+
   describe "rm" do
     it "removes the toml row and the keychain entry" do
       stub_platform_linux

@@ -99,6 +99,19 @@ module Xbookmark
         end
       end
 
+      desc "show PROVIDER", "Resolve and print PROVIDER's credential (diagnostic; for scripts/CI)"
+      def show(provider)
+        require_relative "../keystore/provider"
+        require_relative "../keystore/resolver"
+
+        prov = Xbookmark::Keystore::Provider.parse(provider)
+        value = Xbookmark::Keystore::Resolver.new.resolve(prov)
+        puts value
+      rescue Xbookmark::Error => e
+        warn e.message
+        exit 1
+      end
+
       desc "rm PROVIDER", "Remove PROVIDER from auth.toml (and its keychain entry, if any)"
       def rm(provider)
         require_relative "../keystore/provider"
