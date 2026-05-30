@@ -6,6 +6,7 @@
 | Codex service-tier cleanup | Needs live setup/install verification after commit | Current code removes stale invalid top-level `service_tier` values, preserves valid speed modes, and specs cover parser/setup/install/atomic-write paths, but this refresh did not run a real setup/install against a user's live Codex config. |
 | Post-commit diff source | Review checkout HEAD did not identify the xbookmark commit directly | On 2026-06-15, local `HEAD` was a grafted plugin-logo commit while xbookmark files appeared as untracked against that HEAD. This refresh used `origin/main..origin/feat/wiki-graph-taxonomy` at `c83d53c` plus visible source files. Confirm future post-commit refresh checkouts preserve a normal xbookmark HEAD if refreshes must inspect `HEAD` directly. |
 | Cross-project wiki | No xbookmark-specific master page found | `/home/asterio/wikis/master/wiki` exists, but 2026-05-25 searches found no `xbookmark`-specific page. `~/wikis/main/wiki`, `../wikis/master/wiki`, and `../wikis/main/wiki` did not exist. |
+| Provider credential real-backend CI | Provider routing is covered with tests and CLI shims, but not live 1Password/libsecret/Keychain CI | Real backend validation needs macOS runners, a seeded 1Password service account secret, and a Linux D-Bus/libsecret job. |
 
 ## Resolved Bootstrap Validation
 

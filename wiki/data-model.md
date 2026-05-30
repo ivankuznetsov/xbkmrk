@@ -3,7 +3,7 @@ title: Data Model
 type: data-model
 source: lib/xbookmark/state/migrations.rb; lib/xbookmark/state/store.rb; lib/xbookmark/render/bookmark_renderer.rb
 created: 2026-05-14
-updated: 2026-06-15
+updated: 2026-07-09
 tags: [data, sqlite, bookmark-wiki]
 ---
 
@@ -74,6 +74,10 @@ The renderer writes final markdown under:
 <bookmark-wiki>/.xbookmark/taxonomy-*.manifest.json
 <bookmark-wiki>/.xbookmark/taxonomy-*.graph-health.json
 ```
+
+## Auth Routing TOML
+
+Provider API-key routing lives outside the bookmark wiki at `~/.config/xbookmark/auth.toml`. It records one section per provider with a backend (`1password` or `keychain`) and, for 1Password, an `op://...` reference. It intentionally stores no secret values; actual values remain in 1Password, the host keychain, or environment variables such as `XBOOKMARK_OPENROUTER_KEY`.
 
 Bookmark markdown frontmatter includes `xbookmark_schema`, tweet and author fields, timestamps, sanitized tags, canonical concept slugs/labels, facet tags, media records, conversation/thread references, links, summary, and `enrichment_status`.
 

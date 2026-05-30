@@ -3,11 +3,11 @@ title: Commands
 type: commands
 source: bin/xbookmark; lib/xbookmark/cli.rb; lib/xbookmark/cli/*.rb; lib/xbookmark/config.rb; lib/xbookmark/qmd/registrar.rb; README.md; .env.example
 created: 2026-05-14
-updated: 2026-06-15
+updated: 2026-07-09
 tags: [commands, cli]
 ---
 
-**TLDR**: The README and implementation are aligned around the currently implemented Thor CLI: auth login/status/refresh, backfill, sync, resync, reenrich, find, taxonomy audit/rebuild, doctor/doctor --fix, install, setup, and uninstall.
+**TLDR**: The README and implementation are aligned around the currently implemented Thor CLI: auth login/bind/list/rm/status/refresh, backfill, sync, resync, reenrich, find, taxonomy audit/rebuild, doctor/doctor --fix, install, setup, and uninstall.
 
 ## Fresh Setup Contract
 
@@ -29,6 +29,10 @@ Packaged binary installs also support running `xbookmark` with no arguments in a
 - `bin/xbookmark` requires `lib/xbookmark/cli` and starts `Xbookmark::CLI`.
 - `xbookmark version` prints `Xbookmark::VERSION`.
 - `xbookmark auth login` runs OAuth 2.0 PKCE against X and writes tokens to the configured env file.
+- `xbookmark auth login PROVIDER` prompts for a third-party provider key without echoing input, writes it to the platform keychain backend, and records keychain routing in `auth.toml`.
+- `xbookmark auth bind PROVIDER OP_REF` validates an `op://...` 1Password reference, smoke-checks it when the `op` CLI is available, and records 1Password routing without storing the secret value.
+- `xbookmark auth list` shows configured provider names and backends from `auth.toml` plus environment variables without printing secret values.
+- `xbookmark auth rm PROVIDER` removes provider routing and deletes the platform-keychain entry when the provider was routed to `keychain`.
 - `xbookmark auth status` reports whether an access token is present and still current; expired access tokens exit non-zero and point users at `auth refresh` or `auth login`.
 - `xbookmark auth refresh` uses the saved refresh token to rotate OAuth tokens immediately, reports the token destination on success, and exits non-zero with a direct `auth login` hint when X rejects the refresh token.
 - `xbookmark backfill [--limit N]` runs a limited test backfill when `--limit` is present and a full backfill otherwise.
@@ -47,10 +51,13 @@ Global options visible in `Xbookmark::CLI` are `--wiki`, `--vault` as a legacy a
 
 Configuration loaded by these commands comes from `XBOOKMARK_ENV_FILE`, `$PWD/.env`, and `~/.config/xbookmark/.env`, plus process environment values. The preferred bookmark wiki path key is `XBOOKMARK_WIKI_PATH`; `XBOOKMARK_VAULT`, `OBSIDIAN_VAULT_PATH`, and `--vault` are compatibility aliases.
 
+Provider credential resolution uses `Xbookmark::Keystore::Resolver`: exact `CI=true` or `XBOOKMARK_KEYS_FROM_ENV=1` forces environment lookup and skips `auth.toml`; outside that mode, `auth.toml` can route providers to 1Password or the platform keychain, and plain environment variables are the final fallback. Linux keychain routing requires both `secret-tool` and a non-empty D-Bus session address.
+
 ## Command Flow
 
 - `backfill`, `sync`, and `resync` all load config, open the SQLite state store, create an X API client, and delegate to `Xbookmark::Sync::Runner`.
 - `auth refresh` loads config, invokes `Xbookmark::X::Auth#refresh!`, and writes rotated tokens to the same destination as `auth login`.
+- `auth login PROVIDER`, `auth bind`, `auth list`, `auth rm`, and provider lookups delegate to `Xbookmark::Keystore::AuthConfig`, `Resolver`, and the selected platform/1Password backend.
 - `backfill` and `sync` first process cached pending/retry rows from SQLite. Rows with cached `payload_json` can be enriched without X; uncached legacy retry rows and new bookmark discovery still need X.
 - `sync` starts from the newest bookmark page and stops after a page with no new bookmarks; X `next_token` values are not treated as durable cursors between runs.
 - `find` delegates to `Xbookmark::Qmd::Searcher`.

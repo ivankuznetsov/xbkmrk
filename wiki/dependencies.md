@@ -1,19 +1,19 @@
 ---
 title: Dependencies
 type: dependencies
-source: git ls-files; Gemfile; xbookmark.gemspec; README.md
+source: git ls-files; Gemfile; Gemfile.lock; xbookmark.gemspec; README.md; lib/xbookmark/keystore/*.rb
 created: 2026-05-14
-updated: 2026-05-25
+updated: 2026-07-09
 tags: [dependencies]
 ---
 
-**TLDR**: `xbookmark` is a Ruby gem-style CLI with Ruby gems for CLI/config/state/HTTP and external tools for Codex, QMD, Whisper, and native schedulers.
+**TLDR**: `xbookmark` is a Ruby gem-style CLI with Ruby gems for CLI/config/state/HTTP/TOML auth routing and external tools for Codex, QMD, Whisper, credential stores, and native schedulers.
 
 ## Ruby Dependencies
 
 The project contains:
 
-- `Gemfile` using `gemspec`, plus development/test gems `minitest`, `mocha`, `webmock`, and `rake`.
+- `Gemfile` using `gemspec`, plus development/test/check gems `minitest`, `mocha`, `webmock`, `rake`, `rubocop`, `rubocop-rails-omakase`, `brakeman`, and `bundler-audit`.
 - `xbookmark.gemspec` with runtime dependencies:
   - `thor` for the CLI.
   - `dotenv` for env-file loading.
@@ -23,7 +23,9 @@ The project contains:
   - `nokogiri` for external link text extraction.
   - `down` for media downloads.
   - `json-schema` for validating Codex JSON output.
+  - `tomlrb` for reading provider auth routing from `~/.config/xbookmark/auth.toml`.
   - `base64` and `ostruct`.
+- The 2026-05-30 dependency commit added `tomlrb (~> 2.0)` as a runtime dependency and locked `tomlrb 2.0.4`; no development/test gem changed in that committed diff.
 - Required Ruby version in the gemspec is `>= 3.1`.
 
 ## External Runtime Tools
@@ -38,6 +40,12 @@ The runtime shells out to external tools:
   - For whisper.cpp binaries, model aliases such as `base.en` resolve to `ggml-base.en.bin` under `WHISPER_MODEL_DIR`, the source checkout's `models/` directory next to the binary, or `./models`.
   - `ffmpeg` is required to extract audio from downloaded video media before whisper.cpp transcription.
   - `WHISPER_THREADS` optionally controls whisper.cpp CPU threads; blank defaults to up to 8 local CPU threads.
+- Credential-store tools:
+  - macOS uses the `security` CLI for login Keychain access.
+  - Linux uses `secret-tool` when a D-Bus session is available, otherwise xbookmark falls back to a `0600` env file under `~/.config/xbookmark/.env`.
+  - Provider auth routing also treats Linux libsecret as unavailable when `DBUS_SESSION_BUS_ADDRESS` is empty, even if `secret-tool` is on `PATH`, so routed lookups produce an actionable keychain-unavailable hint instead of hanging on D-Bus-less hosts.
+  - Keychain/libsecret reads treat signal-killed backend commands as hard errors, not absent secrets. Libsecret deletes tolerate an already-absent secret so stale `auth.toml` routing can still be cleared.
+  - The 1Password backend shells out to `op read --no-newline <op://...>` with a bounded runtime and child reaping; `AuthConfig` records provider routing and optional `op://` refs in `~/.config/xbookmark/auth.toml` with mode `0600`, but not secret values.
 - System scheduler tools: `systemctl --user` and `loginctl` on Linux, and `launchctl` on macOS.
 
 ## External Services

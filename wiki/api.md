@@ -3,11 +3,11 @@ title: API Surface
 type: api
 source: lib/xbookmark/x/auth.rb; lib/xbookmark/x/client.rb; lib/xbookmark/qmd/registrar.rb; lib/xbookmark/qmd/searcher.rb; README.md; .env.example
 created: 2026-05-14
-updated: 2026-06-15
+updated: 2026-07-09
 tags: [api, x-api, oauth, cli]
 ---
 
-**TLDR**: `xbookmark` has no web app routes; its external surface is a CLI, X API v2 calls, a temporary local OAuth callback, and QMD registration/search/reindex subprocess calls.
+**TLDR**: `xbookmark` has no web app routes; its external surface is a CLI, X API v2 calls, a temporary local OAuth callback, provider credential routing, and QMD registration/search/reindex subprocess calls.
 
 ## Scope
 
@@ -61,6 +61,13 @@ Bookmark requests use 50-item pages and follow `meta.next_token`. Production tes
 - `Xbookmark::CodexConfig.default_path` reads `$CODEX_HOME/config.toml` when `CODEX_HOME` is set, otherwise `~/.codex/config.toml`.
 - `xbookmark setup` and non-dry-run `xbookmark install` remove only stale invalid top-level `service_tier` values before the first TOML table. Project-scoped tables such as `[projects."/tmp/app"]` and valid speed modes are preserved.
 - When the file is rewritten, xbookmark creates parent directories as needed, writes through an atomic temp-file replacement, and sets the config file mode to `0600`.
+
+## Provider Credential Surface
+
+- Provider names are parsed through `Xbookmark::Keystore::Provider` and limited to lowercase letters, digits, underscores, and hyphens, with path traversal rejected before any backend or TOML section is touched.
+- `~/.config/xbookmark/auth.toml` stores provider routing only: backend names and optional `op://` refs, never secret values. The file is written with mode `0600`.
+- `Xbookmark::Keystore::Resolver` is the runtime provider-key entry point. CI/env-forced mode reads canonical `XBOOKMARK_<PROVIDER>_KEY` environment variables; normal mode prefers `auth.toml` routing to 1Password or the platform keychain, then falls back to environment variables.
+- `xbookmark auth bind PROVIDER OP_REF` validates the 1Password reference shape and smoke-checks `op read` when available. `xbookmark auth login PROVIDER` stores an interactively entered key in the platform keychain without accepting it on argv.
 
 ## Public Contract Notes
 

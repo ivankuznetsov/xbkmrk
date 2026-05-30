@@ -3,7 +3,7 @@ title: Decisions
 type: decisions
 source: git log; git worktree list; .hive-state/config.yml; lib/xbookmark/**/*.rb; README.md; .env.example
 created: 2026-05-14
-updated: 2026-06-14
+updated: 2026-07-09
 tags: [decisions]
 ---
 
@@ -22,6 +22,7 @@ tags: [decisions]
 - Use official X API v2 with OAuth 2.0 PKCE and scopes visible in `Xbookmark::X::Auth`.
 - Use 50-item pages for `GET /2/users/:user_id/bookmarks`; live production showed `max_results=100` can omit pagination even when older bookmarks exist.
 - Require `X_CLIENT_ID` and `X_USER_ID` at config load time; store access and refresh tokens back into the env file with file mode `0600`.
+- Store third-party provider API-key routing in `~/.config/xbookmark/auth.toml`, not the key values. Provider values should resolve from 1Password, the host keychain, or environment variables, with `CI=true` and `XBOOKMARK_KEYS_FROM_ENV=1` forcing env-only lookup.
 - Create a standalone bookmark wiki at `XBOOKMARK_WIKI_PATH`, separate from the project LLM wiki in `wiki/`.
 - Default new installs to `xbookmark-wiki`; migration from the earlier local `xbookmark-vault` name is not needed because the product has not been released.
 - Store local sync state and concept metadata in SQLite at `<bookmark-wiki>/.xbookmark/state.db`.

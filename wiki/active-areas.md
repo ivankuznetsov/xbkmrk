@@ -3,11 +3,11 @@ title: Active Areas
 type: active-areas
 source: git log --name-only; git status; README.md; lib/xbookmark/config.rb; lib/xbookmark/cli.rb
 created: 2026-05-14
-updated: 2026-06-15
+updated: 2026-07-09
 tags: [activity]
 ---
 
-**TLDR**: Production backfill reliability work, 50-item bookmark pagination, Codex service-tier cleanup, and the 100% coverage gate are the current hardening focus.
+**TLDR**: Production backfill reliability work, provider secret routing, 50-item bookmark pagination, Codex service-tier cleanup, and the 100% coverage gate are the current hardening focus.
 
 ## Current Hardening Surface
 
@@ -25,6 +25,7 @@ The active production-hardening behavior is:
 - Specs cover the README setup contract, legacy registrar fallback, scheduler linger setup, and current Codex JSON event parsing.
 - `bundle exec rake coverage` runs Minitest under Ruby's built-in `Coverage` API and enforces 100% line coverage for `bin/` and `lib/`.
 - The earlier `XBOOKMARK_WIKI_PATH` runtime wiki terminology is already on `main`.
+- Provider secret routing now covers 1Password refs, platform keychain storage, CI/env-only mode, and `auth.toml` routing without storing third-party API keys in checked-in files or shell history.
 - Production verification and reusable lessons are summarized in [[live-production-learnings]].
 
 ## Service-Tier Setup Cleanup
