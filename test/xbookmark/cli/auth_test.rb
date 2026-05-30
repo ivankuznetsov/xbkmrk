@@ -96,6 +96,35 @@ describe Xbookmark::CLI::Auth do
         run_cli("login", "../escape")
       end
     end
+
+    it "picks the macOS Keychain backend when on darwin" do
+      stub_platform_macos
+      keychain_double = mock("kc")
+      keychain_double.expects(:set).with("openrouter", "sk-secret").returns(true)
+      keychain_double.stubs(:name).returns("keychain")
+      Xbookmark::Keystore::Keychain.stubs(:new).returns(keychain_double)
+
+      stdin = StringIO.new("sk-secret\n")
+      def stdin.tty?; false; end
+      out, _err = run_cli("login", "openrouter", stdin: stdin)
+      assert_match(/Stored openrouter in keychain\./, out)
+    end
+
+    it "reads the secret with noecho when stdin is a TTY" do
+      stub_platform_linux
+      keychain_double = mock("kc")
+      keychain_double.expects(:set).with("openrouter", "sk-tty").returns(true)
+      keychain_double.stubs(:name).returns("libsecret")
+      Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
+      Xbookmark::Keystore::Libsecret.stubs(:new).returns(keychain_double)
+
+      stdin = StringIO.new("sk-tty\n")
+      def stdin.tty?; true; end
+      def stdin.noecho; yield(self); end
+
+      out, _err = run_cli("login", "openrouter", stdin: stdin)
+      assert_match(/Stored openrouter/, out)
+    end
   end
 
   describe "bind" do

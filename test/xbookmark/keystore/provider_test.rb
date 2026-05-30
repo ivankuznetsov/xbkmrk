@@ -39,4 +39,8 @@ describe Xbookmark::Keystore::Provider do
     assert_raises(Xbookmark::Error) { described_class.parse("") }
     assert_raises(Xbookmark::Error) { described_class.parse("   ") }
   end
+
+  it "to_s returns the provider name" do
+    assert_equal "openrouter", described_class.parse("openrouter").to_s
+  end
 end
