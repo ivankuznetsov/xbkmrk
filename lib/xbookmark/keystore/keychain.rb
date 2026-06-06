@@ -12,13 +12,22 @@ module Xbookmark
       end
 
       def get(account)
-        out, _err, status = Open3.capture3(
+        out, err, status = Open3.capture3(
           "security", "find-generic-password",
           "-s", Xbookmark::Keystore::SERVICE, "-a", account.to_s, "-w"
         )
-        return nil unless status.success?
-        value = out.to_s.chomp
-        value.empty? ? nil : value
+        if status.success?
+          value = out.to_s.chomp
+          return value.empty? ? nil : value
+        end
+        # A genuine "not stored" exits non-zero with no diagnostic on stderr;
+        # collapse only that to nil. A non-empty stderr means something
+        # transient went wrong (e.g. a locked keychain that failed to unlock) —
+        # surfacing it stops the Resolver from reporting a still-present secret
+        # as permanently missing and prompting a destructive re-login overwrite.
+        raise Xbookmark::Error,
+          "security find-generic-password failed: #{err.to_s.strip}" unless err.to_s.strip.empty?
+        nil
       end
 
       def set(account, value)
@@ -42,7 +51,12 @@ module Xbookmark
           "security", "delete-generic-password",
           "-s", Xbookmark::Keystore::SERVICE, "-a", account.to_s
         )
-        status.success?
+        return true if status.success?
+        # exit 44 == errSecItemNotFound: there is nothing to delete, so report
+        # success. This lets `auth rm` clear stale auth.toml routing after the
+        # secret was already removed out-of-band, instead of wedging on a
+        # missing item (no secret can be orphaned when none exists).
+        status.exitstatus == 44
       end
 
       def list_accounts

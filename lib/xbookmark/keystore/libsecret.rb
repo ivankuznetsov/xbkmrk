@@ -26,14 +26,24 @@ module Xbookmark
       end
 
       def get(account)
-        out, _err, status = Open3.capture3(
+        out, err, status = Open3.capture3(
           "secret-tool", "lookup",
           "service", Xbookmark::Keystore::SERVICE,
           "account", account.to_s
         )
-        return nil unless status.success?
-        return nil if out.to_s.empty?
-        out
+        if status.success?
+          return nil if out.to_s.empty?
+          return out
+        end
+        # `secret-tool lookup` exits non-zero with no stderr when the item is
+        # simply absent (a genuine "not found"). A non-empty stderr means a
+        # transient failure — locked keyring, no D-Bus session — and collapsing
+        # that to nil would mislead the Resolver into reporting the credential
+        # as permanently missing and prompting a destructive overwrite. Surface
+        # it instead.
+        raise Xbookmark::Error,
+          "secret-tool lookup failed: #{err.to_s.strip}" unless err.to_s.strip.empty?
+        nil
       end
 
       def set(account, value)

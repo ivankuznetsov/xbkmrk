@@ -118,10 +118,18 @@ describe Xbookmark::Keystore::Libsecret do
     assert_nil backend.get("empty")
   end
 
-  it "returns nil when secret-tool exits non-zero" do
+  it "returns nil when secret-tool exits non-zero with no stderr (item absent)" do
     status = process_status(success: false)
     Open3.stubs(:capture3).returns(["", "", status])
     assert_nil backend.get("missing")
+  end
+
+  it "raises on a transient lookup failure that reports an error on stderr" do
+    status = process_status(success: false)
+    Open3.stubs(:capture3).returns(["", "Cannot autolaunch D-Bus", status])
+
+    error = assert_raises(Xbookmark::Error) { backend.get("openrouter") }
+    assert_match(/D-Bus/, error.message)
   end
 
   it "passes value via stdin to secret-tool store" do
@@ -194,6 +202,24 @@ describe Xbookmark::Keystore::Keychain do
 
     assert_nil backend.get("missing")
     assert_nil backend.get("empty")
+  end
+
+  it "raises on a transient find failure that reports an error on stderr" do
+    status = process_status(success: false)
+    Open3.stubs(:capture3).returns(["", "User interaction is not allowed.", status])
+
+    error = assert_raises(Xbookmark::Error) { backend.get("openrouter") }
+    assert_match(/User interaction is not allowed/, error.message)
+  end
+
+  it "treats errSecItemNotFound (exit 44) as a successful delete" do
+    status = process_status(success: false, exitstatus: 44)
+    Open3.expects(:capture3).with(
+      "security", "delete-generic-password",
+      "-s", "xbookmark", "-a", "openrouter"
+    ).returns(["", "could not be found", status])
+
+    assert_equal true, backend.delete("openrouter")
   end
 
   it "adds, deletes, and lists keychain entries" do
