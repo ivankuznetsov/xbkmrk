@@ -43,4 +43,17 @@ describe Xbookmark::Keystore::Provider do
   it "to_s returns the provider name" do
     assert_equal "openrouter", described_class.parse("openrouter").to_s
   end
+
+  it "freezes parsed instances so the value object is immutable" do
+    assert described_class.parse("openrouter").frozen?
+  end
+
+  it "makes the raw constructor private so parse is the sole door" do
+    assert_raises(NoMethodError) { described_class.new("UNVALIDATED") }
+  end
+
+  it "names the anchored pattern in its rejection message" do
+    error = assert_raises(Xbookmark::Error) { described_class.parse("foo bar") }
+    assert_match(%r{\\A\[a-z0-9_-\]\+\\z}, error.message)
+  end
 end

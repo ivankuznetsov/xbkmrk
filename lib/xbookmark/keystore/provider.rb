@@ -14,10 +14,12 @@ module Xbookmark
         normalized = raw.downcase
         unless normalized.match?(NAME_PATTERN)
           raise Xbookmark::Error,
-            "invalid provider name #{arg.inspect}: must match /[a-z0-9_-]+/"
+            "invalid provider name #{arg.inspect}: must match /\\A[a-z0-9_-]+\\z/"
         end
 
-        new(normalized)
+        # `parse` is the sole constructor: it normalizes, validates, and freezes
+        # so the value-object invariant cannot be bypassed (see private `new`).
+        new(normalized).freeze
       end
 
       def account
@@ -40,6 +42,11 @@ module Xbookmark
       def to_s
         name.to_s
       end
+
+      # Force every instance through `parse`, which is the only place the
+      # charset/empty/downcase invariant is enforced. Existing callers already
+      # use `parse`, so this closes the back door without breaking anyone.
+      private_class_method :new
     end
   end
 end
