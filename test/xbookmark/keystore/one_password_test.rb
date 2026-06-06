@@ -61,6 +61,14 @@ describe Xbookmark::Keystore::OnePassword do
     assert_match(/some op error/, error.message)
   end
 
+  it "translates a Timeout::Error from the op shell-out into an Xbookmark::Error" do
+    Timeout.stubs(:timeout).raises(Timeout::Error)
+
+    error = assert_raises(Xbookmark::Error) { backend.read("op://Personal/Slow/cred", timeout: 1) }
+    assert_match(/timed out after 1s/, error.message)
+    assert_match(/op signin/i, error.message)
+  end
+
   it "maps 'not signed in' stderr to a friendly hint" do
     status = process_status(success: false)
     Open3.stubs(:capture3).returns(["", "[ERROR] not signed in", status])

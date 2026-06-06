@@ -158,6 +158,22 @@ describe Xbookmark::CLI::Auth do
       assert_nil cfg.lookup("openrouter"), "a rejected ref must not be persisted"
     end
 
+    it "persists without warning when the op smoke check resolves the ref" do
+      Xbookmark::Keystore::OnePassword.stubs(:available?).returns(true)
+      op = mock("op")
+      op.expects(:read).with("op://Personal/OR/cred").returns("sk-verified")
+      Xbookmark::Keystore::OnePassword.stubs(:new).returns(op)
+
+      out, err = run_cli("bind", "openrouter", "op://Personal/OR/cred")
+      assert_match(/Bound openrouter to op:/, out)
+      refute_match(/without verification/, err)
+      refute_match(/Refusing to bind/, err)
+
+      cfg = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
+      assert_equal "1password", cfg.lookup("openrouter")[:backend]
+      assert_equal "op://Personal/OR/cred", cfg.lookup("openrouter")[:ref]
+    end
+
     it "warns but still binds when 1Password is installed yet not signed in" do
       Xbookmark::Keystore::OnePassword.stubs(:available?).returns(true)
       op = mock("op")
@@ -238,13 +254,23 @@ describe Xbookmark::CLI::Auth do
       assert_match(/sk-resolved/, out)
     end
 
-    it "exits non-zero with the error message when nothing is configured" do
+    it "exits non-zero with the actionable hint on stderr when nothing is configured" do
       ENV.keys.grep(/\AXBOOKMARK_.+_KEY\z/).each { |k| ENV.delete(k) }
-      err = nil
-      assert_raises(SystemExit) do
-        _out, err_str = run_cli("show", "openrouter")
-        err = err_str
+
+      # `show` calls exit 1, so run_cli never returns its captured strings;
+      # capture stderr directly and assert the missing-credential hint reaches
+      # the CLI layer (not just the Resolver).
+      captured_stderr = StringIO.new
+      orig_stderr = $stderr
+      $stderr = captured_stderr
+      begin
+        assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(["show", "openrouter"]) }
+      ensure
+        $stderr = orig_stderr
       end
+
+      assert_match(/No credential configured for openrouter/, captured_stderr.string)
+      assert_match(/auth login openrouter/, captured_stderr.string)
     end
   end
 
