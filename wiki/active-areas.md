@@ -25,7 +25,7 @@ The active production-hardening behavior is:
 - Specs cover the README setup contract, legacy registrar fallback, scheduler linger setup, and current Codex JSON event parsing.
 - `bundle exec rake coverage` runs Minitest under Ruby's built-in `Coverage` API and enforces 100% line coverage for `bin/` and `lib/`.
 - The earlier `XBOOKMARK_WIKI_PATH` runtime wiki terminology is already on `main`.
-- Provider secret routing now covers 1Password refs, platform keychain storage, CI/env-only mode, diagnostic `auth show`, and `auth.toml` routing without storing third-party API keys in checked-in files or shell history.
+- Provider secret routing now covers 1Password refs, platform keychain storage, exact `CI=true`/env-only mode, diagnostic `auth show`, and `auth.toml` routing without storing third-party API keys in checked-in files or shell history.
 - Production verification and reusable lessons are summarized in [[live-production-learnings]].
 
 ## Service-Tier Setup Cleanup
