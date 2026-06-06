@@ -88,11 +88,13 @@ describe Xbookmark::CLI::Auth do
       assert_raises(SystemExit) { run_cli("login", "openrouter", stdin: stdin) }
     end
 
-    it "rejects invalid provider names" do
+    it "rejects invalid provider names with a clean exit, not a backtrace" do
       stub_platform_linux
       Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
 
-      assert_raises(Xbookmark::Error) do
+      # parse_provider rescues the Xbookmark::Error and exits 1 instead of
+      # letting a raw backtrace escape.
+      assert_raises(SystemExit) do
         run_cli("login", "../escape")
       end
     end
@@ -142,15 +144,34 @@ describe Xbookmark::CLI::Auth do
       assert_raises(SystemExit) { run_cli("bind", "openrouter", "not-a-ref") }
     end
 
-    it "warns but does not exit when op smoke check fails" do
+    it "fails fast and does not persist when the op smoke check rejects the ref" do
       Xbookmark::Keystore::OnePassword.stubs(:available?).returns(true)
       op = mock("op")
       op.stubs(:read).raises(Xbookmark::Error, "bad ref")
       Xbookmark::Keystore::OnePassword.stubs(:new).returns(op)
 
+      assert_raises(SystemExit) do
+        run_cli("bind", "openrouter", "op://Personal/Missing/cred")
+      end
+
+      cfg = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
+      assert_nil cfg.lookup("openrouter"), "a rejected ref must not be persisted"
+    end
+
+    it "warns but still binds when 1Password is installed yet not signed in" do
+      Xbookmark::Keystore::OnePassword.stubs(:available?).returns(true)
+      op = mock("op")
+      op.stubs(:read).raises(
+        Xbookmark::Keystore::OnePassword::NotSignedInError, "not signed in"
+      )
+      Xbookmark::Keystore::OnePassword.stubs(:new).returns(op)
+
       out, err = run_cli("bind", "openrouter", "op://Personal/Missing/cred")
       assert_match(/Bound openrouter to op:/, out)
-      assert_match(/Warning: bound openrouter but op read failed/, err)
+      assert_match(/without verification/, err)
+
+      cfg = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
+      assert_equal "1password", cfg.lookup("openrouter")[:backend]
     end
   end
 
@@ -234,6 +255,38 @@ describe Xbookmark::CLI::Auth do
 
       out, _err = run_cli("rm", "openrouter")
       assert_match(/Removed openrouter/, out)
+    end
+
+    it "keeps the routing when no keychain backend is available to delete the secret" do
+      stub_platform_linux
+      Xbookmark::Keystore::Libsecret.stubs(:available?).returns(false)
+
+      cfg = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
+      cfg.bind_keychain("openrouter")
+
+      assert_raises(SystemExit) { run_cli("rm", "openrouter") }
+
+      reloaded = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
+      refute_nil reloaded.lookup("openrouter"),
+        "routing must remain so the keychain secret is not orphaned"
+    end
+
+    it "keeps the routing when the keychain delete fails" do
+      stub_platform_linux
+      keychain_double = mock("kc")
+      keychain_double.expects(:delete).with("openrouter").returns(false)
+      keychain_double.stubs(:name).returns("libsecret")
+      Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
+      Xbookmark::Keystore::Libsecret.stubs(:new).returns(keychain_double)
+
+      cfg = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
+      cfg.bind_keychain("openrouter")
+
+      assert_raises(SystemExit) { run_cli("rm", "openrouter") }
+
+      reloaded = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
+      refute_nil reloaded.lookup("openrouter"),
+        "routing must remain when the secret could not be deleted"
     end
   end
 end

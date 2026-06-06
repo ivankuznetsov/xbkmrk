@@ -19,8 +19,10 @@ module Xbookmark
         With a PROVIDER argument (e.g. `openrouter`), prompts for the API
         key on stdin without echoing it, writes the value into the host
         keystore (Keychain on macOS, libsecret on Linux), and records the
-        routing in ~/.config/xbookmark/auth.toml.  The value is never
-        accepted on argv or via a flag, so it cannot land in shell history.
+        routing in ~/.config/xbookmark/auth.toml.  The API key value is
+        never accepted on argv or via a flag, so it cannot land in shell
+        history (the `bind` subcommand, by contrast, does take an `op://`
+        reference on argv — that is a pointer, not the secret itself).
       LONG
       def login(provider = nil)
         if provider.nil?
@@ -48,25 +50,30 @@ module Xbookmark
         require_relative "../keystore/auth_config"
         require_relative "../keystore/one_password"
 
-        prov = Xbookmark::Keystore::Provider.parse(provider)
+        prov = parse_provider(provider)
         unless op_ref.to_s.start_with?("op://")
           warn "Bad 1Password reference: must start with op:// (got #{op_ref.inspect})"
           exit 1
         end
 
-        cfg = Xbookmark::Keystore::AuthConfig.new
-        cfg.bind_one_password(prov, op_ref)
-
-        # Optional smoke-check: if `op` is installed, validate the reference
-        # immediately so the user finds out at bind-time, not first sync.
-        # The resolved value is discarded.
+        # Smoke-check *before* persisting: if `op` is installed, validate the
+        # reference now so a bad ref fails fast instead of being written and
+        # only surfacing at resolve time. The resolved value is discarded.
+        # "Not signed in" is a warn-and-continue case (we cannot verify, but the
+        # ref may well be fine); any other failure means the ref is broken.
         if Xbookmark::Keystore::OnePassword.available?
           begin
             Xbookmark::Keystore::OnePassword.new.read(op_ref)
-          rescue Xbookmark::Error => e
-            warn "Warning: bound #{prov.name} but op read failed: #{e.message}"
+          rescue Xbookmark::Keystore::OnePassword::NotSignedInError => e
+            warn "Warning: binding #{prov.name} without verification (#{e.message})"
+          rescue Xbookmark::Error, SystemCallError => e
+            warn "Refusing to bind #{prov.name}: op read failed: #{e.message}"
+            exit 1
           end
         end
+
+        cfg = Xbookmark::Keystore::AuthConfig.new
+        cfg.bind_one_password(prov, op_ref)
 
         puts "Bound #{prov.name} to #{op_ref}."
       end
@@ -80,11 +87,25 @@ module Xbookmark
           [name, entry[:backend], entry[:ref].to_s]
         end
 
-        env_rows = ENV.keys.grep(/\AXBOOKMARK_(.+)_KEY\z/).map do |env_key|
-          name = env_key.sub(/\AXBOOKMARK_/, "").sub(/_KEY\z/, "").downcase
-          next nil if rows.any? { |r| r[0] == name }
+        # Map each XBOOKMARK_*_KEY env var to the provider the Resolver would
+        # actually route it to. The legacy `XBOOKMARK_<NAME>_API_KEY` form is an
+        # alias for provider `<name>` (not `<name>_api`), so it must be matched
+        # *before* the canonical `XBOOKMARK_<NAME>_KEY` pattern, which would
+        # otherwise capture `<name>_api` and report a phantom provider.
+        seen_env = {}
+        env_rows = ENV.keys.sort.filter_map do |env_key|
+          name =
+            if (m = env_key.match(/\AXBOOKMARK_(.+)_API_KEY\z/))
+              m[1].downcase
+            elsif (m = env_key.match(/\AXBOOKMARK_(.+)_KEY\z/))
+              m[1].downcase
+            end
+          next if name.nil?
+          next if rows.any? { |r| r[0] == name }
+          next if seen_env.key?(name)
+          seen_env[name] = true
           [name, "env", env_key]
-        end.compact
+        end
 
         all = rows + env_rows
         if all.empty?
@@ -104,7 +125,7 @@ module Xbookmark
         require_relative "../keystore/provider"
         require_relative "../keystore/resolver"
 
-        prov = Xbookmark::Keystore::Provider.parse(provider)
+        prov = parse_provider(provider)
         value = Xbookmark::Keystore::Resolver.new.resolve(prov)
         puts value
       rescue Xbookmark::Error => e
@@ -117,7 +138,7 @@ module Xbookmark
         require_relative "../keystore/provider"
         require_relative "../keystore/auth_config"
 
-        prov = Xbookmark::Keystore::Provider.parse(provider)
+        prov = parse_provider(provider)
         cfg = Xbookmark::Keystore::AuthConfig.new
         entry = cfg.lookup(prov)
 
@@ -126,9 +147,22 @@ module Xbookmark
           return
         end
 
+        # Delete the platform credential *first* so we never drop the auth.toml
+        # routing while leaving an orphaned secret behind. If the backend is
+        # unavailable or the delete fails, surface it and keep the routing so
+        # the user can retry rather than silently orphaning the keychain row.
         if entry[:backend] == "keychain"
           backend = pick_keychain_backend
-          backend.delete(prov.account) if backend
+          unless backend
+            warn "No platform keychain available to delete #{prov.name}'s stored secret; " \
+              "leaving auth.toml routing in place. Install libsecret (`secret-tool`) on Linux."
+            exit 1
+          end
+          unless backend.delete(prov.account)
+            warn "Failed to delete #{prov.name} from #{backend.name}; " \
+              "leaving auth.toml routing in place so the secret is not orphaned."
+            exit 1
+          end
         end
 
         cfg.remove(prov)
@@ -197,6 +231,18 @@ module Xbookmark
 
       private
 
+      # Parse a provider name, surfacing the validation error as a clean
+      # one-line message + exit 1 rather than letting Xbookmark::Error (a plain
+      # StandardError, not a Thor::Error) escape as a raw backtrace. Shared by
+      # every subcommand that takes a PROVIDER argument.
+      def parse_provider(arg)
+        require_relative "../keystore/provider"
+        Xbookmark::Keystore::Provider.parse(arg)
+      rescue Xbookmark::Error => e
+        warn e.message
+        exit 1
+      end
+
       def provider_login(provider_arg)
         require_relative "../keystore/provider"
         require_relative "../keystore/auth_config"
@@ -204,7 +250,7 @@ module Xbookmark
         require_relative "../keystore/libsecret"
         require_relative "../paths"
 
-        prov = Xbookmark::Keystore::Provider.parse(provider_arg)
+        prov = parse_provider(provider_arg)
         backend = pick_keychain_backend
         unless backend
           warn "No platform keychain available. " \
