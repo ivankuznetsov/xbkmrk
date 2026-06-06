@@ -218,22 +218,24 @@ Routing for each provider lives in `~/.config/xbookmark/auth.toml`
 (mode 0600, no secret values); the actual key lives in 1Password, the
 host keychain, or the environment.
 
-At runtime the resolver tries, in order: CI env shortcut, `auth.toml`
-routing, then `XBOOKMARK_<PROVIDER>_KEY` from the environment.
+The `auth show <provider>` diagnostic resolves a provider's key, trying in
+order: CI env shortcut, `auth.toml` routing, then `XBOOKMARK_<PROVIDER>_KEY`
+from the environment. (Today `auth show` is the command that exercises this
+resolver; use it to confirm a binding works.)
 
 **Linux with 1Password CLI**
 
 ```bash
 xbookmark auth bind openrouter op://Personal/OpenRouter/credential
 xbookmark auth bind x op://Personal/X/api_key
-xbookmark sync   # resolves via `op read` at runtime
+xbookmark auth show openrouter   # resolves via `op read` (diagnostic)
 ```
 
 **Linux vanilla (GNOME Keyring / KWallet / KeePassXC over libsecret)**
 
 ```bash
 xbookmark auth login openrouter   # hidden prompt; never accepted on argv
-xbookmark sync
+xbookmark auth show openrouter    # confirm it resolves
 ```
 
 **macOS**
@@ -252,7 +254,7 @@ then export the canonical env vars:
 export CI=true
 export XBOOKMARK_OPENROUTER_KEY=...
 export XBOOKMARK_X_KEY=...
-xbookmark sync
+xbookmark auth show openrouter   # confirm the env shortcut resolves
 ```
 
 Inspect or clean up configured providers:
