@@ -46,10 +46,17 @@ describe Xbookmark::CLI::Auth do
     @tmpdir = Dir.mktmpdir("xbookmark-auth-cli")
     @auth_toml = File.join(@tmpdir, "auth.toml")
     Xbookmark::Paths.stubs(:default_config_dir).returns(@tmpdir)
+    # The Linux libsecret backend selection now gates on a live D-Bus session
+    # (mirroring the Resolver and Keystore probes). Present one explicitly so the
+    # login/rm tests verify backend behaviour regardless of the host, instead of
+    # depending on the runner's ENV (a headless CI box may lack D-Bus).
+    @orig_dbus = ENV["DBUS_SESSION_BUS_ADDRESS"]
+    ENV["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=/run/user/1000/bus"
   end
 
   after do
     FileUtils.remove_entry(@tmpdir) if @tmpdir && File.directory?(@tmpdir)
+    @orig_dbus.nil? ? ENV.delete("DBUS_SESSION_BUS_ADDRESS") : (ENV["DBUS_SESSION_BUS_ADDRESS"] = @orig_dbus)
   end
 
   describe "login (no arg)" do
@@ -93,6 +100,22 @@ describe Xbookmark::CLI::Auth do
       assert_raises(SystemExit) do
         run_cli("login", "openrouter", stdin: StringIO.new("sk\n").tap { |io| def io.tty?; false; end })
       end
+    end
+
+    it "exits before prompting on headless Linux (secret-tool present, no D-Bus session)" do
+      stub_platform_linux
+      # secret-tool is on PATH but there is no D-Bus session, exactly the
+      # headless case the Resolver guards against. Selection must reject
+      # libsecret *before* the hidden prompt reads — and never touch stdin —
+      # so the user is not asked to type a key that cannot be stored.
+      ENV.delete("DBUS_SESSION_BUS_ADDRESS")
+      Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
+      Xbookmark::Keystore::Libsecret.expects(:new).never
+
+      stdin = mock("stdin")
+      stdin.expects(:gets).never
+      err = run_cli_expect_exit("login", "openrouter", stdin: stdin)
+      assert_match(/No platform keychain available/, err)
     end
 
     it "rejects an empty value" do

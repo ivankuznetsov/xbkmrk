@@ -27,16 +27,17 @@ module Xbookmark
           raise Xbookmark::Error,
             "security find-generic-password terminated abnormally (killed by a signal)"
         end
-        # A genuine "not stored" exits non-zero with no diagnostic on stderr;
-        # collapse only that to nil. A non-empty stderr means something
-        # transient went wrong (e.g. a locked keychain that failed to unlock) —
-        # surfacing it stops the Resolver from reporting a still-present secret
-        # as permanently missing and prompting a destructive re-login overwrite.
-        # (The exact not-found exit code is assumed, not verified — see
-        # wiki/gaps.md.)
+        # exit 44 == errSecItemNotFound: the credential is genuinely absent, so
+        # collapse it to nil. Real `security` *also writes* "The specified item
+        # could not be found in the keychain." to stderr on a miss, so we key
+        # off the exit code (mirroring `delete`'s exit-44 tolerance) rather than
+        # an empty stderr. Any other non-zero exit is a transient failure (e.g.
+        # a locked keychain that failed to unlock) — surface it so the Resolver
+        # does not report a still-present secret as permanently missing and
+        # prompt a destructive re-login overwrite.
+        return nil if status.exitstatus == 44
         raise Xbookmark::Error,
-          "security find-generic-password failed: #{err.to_s.strip}" unless err.to_s.strip.empty?
-        nil
+          "security find-generic-password failed: #{err.to_s.strip}"
       end
 
       def set(account, value)

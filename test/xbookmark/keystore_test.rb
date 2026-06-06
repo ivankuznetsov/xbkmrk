@@ -226,9 +226,14 @@ describe Xbookmark::Keystore::Keychain do
   end
 
   it "returns nil for missing or empty keychain entries" do
-    missing = process_status(success: false)
+    # Real `security` exits 44 (errSecItemNotFound) AND writes the not-found
+    # message to stderr on a miss, so the backend must key off the exit code,
+    # not stderr emptiness.
+    missing = process_status(success: false, exitstatus: 44)
     empty = process_status(success: true)
-    Open3.stubs(:capture3).returns(["", "", missing]).then.returns(["\n", "", empty])
+    Open3.stubs(:capture3)
+      .returns(["", "The specified item could not be found in the keychain.", missing])
+      .then.returns(["\n", "", empty])
 
     assert_nil backend.get("missing")
     assert_nil backend.get("empty")

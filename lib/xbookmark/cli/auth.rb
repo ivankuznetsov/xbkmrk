@@ -317,9 +317,20 @@ module Xbookmark
       def pick_keychain_backend
         if Xbookmark::Paths.macos?
           Xbookmark::Keystore::Keychain.new
-        elsif Xbookmark::Keystore::Libsecret.available?
+        elsif linux_libsecret_available?
           Xbookmark::Keystore::Libsecret.new
         end
+      end
+
+      # Mirror Resolver#linux_libsecret_available? and Keystore#libsecret_available?:
+      # libsecret on Linux needs both the `secret-tool` binary *and* a live
+      # D-Bus session. Probing only the binary made `auth login PROVIDER` accept
+      # the hidden key prompt on a headless host, then fail at store time after
+      # the user had already typed their secret.
+      def linux_libsecret_available?
+        return false unless Xbookmark::Paths.linux?
+        return false if ENV["DBUS_SESSION_BUS_ADDRESS"].to_s.strip.empty?
+        Xbookmark::Keystore::Libsecret.available?
       end
 
       def read_secret_from_stdin(prompt)
