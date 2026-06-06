@@ -34,8 +34,10 @@ module Xbookmark
       end
 
       def entries
-        # Return a deep copy so callers cannot mutate our internal state by
-        # accident.  Tiny hash, no perf concern.
+        # Return a per-entry copy so callers cannot mutate our internal state by
+        # accident.  `h.dup` is a one-level copy, which fully isolates callers
+        # only because each entry is a flat hash of scalars (no nested objects to
+        # share).  Tiny hash, no perf concern.
         @entries.transform_values { |h| h.dup }
       end
 

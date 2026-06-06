@@ -47,8 +47,8 @@ module Xbookmark
         # transient failure — locked keyring, no D-Bus session — and collapsing
         # that to nil would mislead the Resolver into reporting the credential
         # as permanently missing and prompting a destructive overwrite. Surface
-        # it instead. (The exact not-found exit code is assumed, not verified —
-        # see wiki/gaps.md.)
+        # it instead. ("Not found" is inferred from an empty stderr, not from a
+        # specific exit code — see wiki/gaps.md.)
         raise Xbookmark::Error,
           "secret-tool lookup failed: #{err.to_s.strip}" unless err.to_s.strip.empty?
         nil

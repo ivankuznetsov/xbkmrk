@@ -48,6 +48,12 @@ module Xbookmark
       # must be privatized too — otherwise `Provider["UNVALIDATED"]` yields an
       # unvalidated, unfrozen instance that `Resolver#resolve` would trust.
       private_class_method :new, :[]
+
+      # `Struct.new(:name)` also generates a public `name=` writer, a latent back
+      # door that would let a holder mutate a parsed, frozen instance's name past
+      # validation. Privatize it so immutability is structural, not merely a
+      # convention that rests on `parse` remembering to `.freeze`.
+      private :name=
     end
 
     # The single source of truth for a legal provider-name charset. Defined on
