@@ -100,7 +100,20 @@ module Xbookmark
           end
         end
 
-        cfg.bind_one_password(prov, op_ref)
+        # The op binding is a local auth.toml write, so — like bind_keychain in
+        # provider_login — it can fail *after* the old keychain secret has
+        # already been deleted above. A SystemCallError (EACCES/EROFS/ENOSPC
+        # from mkdir_p/Tempfile/rename/flock) or a malformed-file Xbookmark::Error
+        # here leaves the secret gone but the routing still pointing at keychain;
+        # funnel it through warn+exit 1 instead of letting a raw backtrace escape.
+        begin
+          cfg.bind_one_password(prov, op_ref)
+        rescue Xbookmark::Error, SystemCallError => e
+          warn "Deleted #{prov.name}'s old keychain secret, but failed to record its " \
+            "1Password routing in auth.toml: #{e.message}. Re-run " \
+            "`xbookmark auth bind #{prov.name} #{op_ref}` once the config dir is writable."
+          exit 1
+        end
 
         puts "Bound #{prov.name} to #{op_ref}."
       end
@@ -384,7 +397,16 @@ module Xbookmark
         $stderr.write(prompt)
         $stderr.flush
         if $stdin.tty? && $stdin.respond_to?(:noecho)
-          value = $stdin.noecho(&:gets)
+          # noecho manipulates the terminal via termios; on a closed or
+          # non-restorable tty it raises a SystemCallError (e.g. Errno::ENOTTY)
+          # *before* the user types. Abort loudly through warn+exit 1 rather than
+          # letting a raw backtrace escape and possibly leave echo disabled.
+          begin
+            value = $stdin.noecho(&:gets)
+          rescue SystemCallError => e
+            warn "Could not disable terminal echo for hidden input: #{e.message}; nothing stored."
+            exit 1
+          end
           $stderr.puts
         else
           value = $stdin.gets
