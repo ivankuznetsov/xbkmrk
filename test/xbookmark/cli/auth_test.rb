@@ -25,6 +25,23 @@ describe Xbookmark::CLI::Auth do
     $stdin = orig_stdin
   end
 
+  # Run the CLI when it is expected to `exit 1`, returning the stderr it wrote.
+  # `run_cli` discards its captured streams on SystemExit, so commands that warn
+  # then exit need their stderr captured directly (as the `show` tests do).
+  def run_cli_expect_exit(*argv, stdin: nil)
+    captured_stderr = StringIO.new
+    orig_stdout, orig_stderr, orig_stdin = $stdout, $stderr, $stdin
+    $stdout = StringIO.new
+    $stderr = captured_stderr
+    $stdin = stdin if stdin
+    assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(argv) }
+    captured_stderr.string
+  ensure
+    $stdout = orig_stdout
+    $stderr = orig_stderr
+    $stdin = orig_stdin
+  end
+
   before do
     @tmpdir = Dir.mktmpdir("xbookmark-auth-cli")
     @auth_toml = File.join(@tmpdir, "auth.toml")
@@ -86,6 +103,49 @@ describe Xbookmark::CLI::Auth do
       stdin = StringIO.new("\n")
       def stdin.tty?; false; end
       assert_raises(SystemExit) { run_cli("login", "openrouter", stdin: stdin) }
+    end
+
+    it "rejects a whitespace-only value without ever calling the backend" do
+      stub_platform_linux
+      keychain_double = mock("kc")
+      # The store-time `.strip.empty?` guard must reject "   " before any write,
+      # matching the Resolver's `non_empty?` (which also strips) so the two
+      # emptiness checks agree and a pure-spaces secret is never persisted.
+      keychain_double.expects(:set).never
+      Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
+      Xbookmark::Keystore::Libsecret.stubs(:new).returns(keychain_double)
+
+      stdin = StringIO.new("   \n")
+      def stdin.tty?; false; end
+      run_cli_expect_exit("login", "openrouter", stdin: stdin)
+    end
+
+    it "reports an EOF on stdin distinctly from an entered-but-empty line" do
+      stub_platform_linux
+      keychain_double = mock("kc")
+      keychain_double.expects(:set).never
+      Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
+      Xbookmark::Keystore::Libsecret.stubs(:new).returns(keychain_double)
+
+      stdin = StringIO.new("")
+      def stdin.tty?; false; end
+      err = run_cli_expect_exit("login", "openrouter", stdin: stdin)
+      assert_match(/EOF/, err)
+    end
+
+    it "exits 1 with a clean message when the backend store fails" do
+      stub_platform_linux
+      keychain_double = mock("kc")
+      keychain_double.expects(:set).raises(Xbookmark::Error, "keyring is locked")
+      keychain_double.stubs(:name).returns("libsecret")
+      Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
+      Xbookmark::Keystore::Libsecret.stubs(:new).returns(keychain_double)
+
+      stdin = StringIO.new("sk-secret\n")
+      def stdin.tty?; false; end
+      err = run_cli_expect_exit("login", "openrouter", stdin: stdin)
+      assert_match(/Could not store openrouter key in libsecret/, err)
+      assert_match(/keyring is locked/, err)
     end
 
     it "rejects invalid provider names with a clean exit, not a backtrace" do
@@ -174,6 +234,22 @@ describe Xbookmark::CLI::Auth do
       assert_equal "op://Personal/OR/cred", cfg.lookup("openrouter")[:ref]
     end
 
+    it "warns but still binds when the op smoke check times out" do
+      Xbookmark::Keystore::OnePassword.stubs(:available?).returns(true)
+      op = mock("op")
+      op.stubs(:read).raises(
+        Xbookmark::Keystore::OnePassword::TimeoutError, "op read timed out after 10s"
+      )
+      Xbookmark::Keystore::OnePassword.stubs(:new).returns(op)
+
+      out, err = run_cli("bind", "openrouter", "op://Personal/Slow/cred")
+      assert_match(/Bound openrouter to op:/, out)
+      assert_match(/without verification/, err)
+
+      cfg = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
+      assert_equal "1password", cfg.lookup("openrouter")[:backend]
+    end
+
     it "warns but still binds when 1Password is installed yet not signed in" do
       Xbookmark::Keystore::OnePassword.stubs(:available?).returns(true)
       op = mock("op")
@@ -242,6 +318,12 @@ describe Xbookmark::CLI::Auth do
   describe "show" do
     it "prints the resolved credential via the Resolver" do
       stub_platform_linux
+      # The Resolver's keychain probe now mirrors Keystore's D-Bus gate, so a
+      # usable-libsecret scenario must present a D-Bus session. Set it
+      # explicitly (and restore) rather than depending on the host's ENV, which
+      # a headless CI runner may lack.
+      orig_dbus = ENV["DBUS_SESSION_BUS_ADDRESS"]
+      ENV["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=/run/user/1000/bus"
       keychain_double = mock("kc")
       keychain_double.stubs(:get).with("openrouter").returns("sk-resolved")
       Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
@@ -252,6 +334,8 @@ describe Xbookmark::CLI::Auth do
 
       out, _err = run_cli("show", "openrouter")
       assert_match(/sk-resolved/, out)
+    ensure
+      orig_dbus.nil? ? ENV.delete("DBUS_SESSION_BUS_ADDRESS") : (ENV["DBUS_SESSION_BUS_ADDRESS"] = orig_dbus)
     end
 
     it "exits non-zero with the actionable hint on stderr when nothing is configured" do

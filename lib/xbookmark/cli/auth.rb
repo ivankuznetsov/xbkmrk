@@ -59,12 +59,14 @@ module Xbookmark
         # Smoke-check *before* persisting: if `op` is installed, validate the
         # reference now so a bad ref fails fast instead of being written and
         # only surfacing at resolve time. The resolved value is discarded.
-        # "Not signed in" is a warn-and-continue case (we cannot verify, but the
-        # ref may well be fine); any other failure means the ref is broken.
+        # "Not signed in" and a timeout are warn-and-continue cases (we cannot
+        # verify, but the ref may well be fine — a slow vault is not a bad ref);
+        # any other failure means the ref is broken.
         if Xbookmark::Keystore::OnePassword.available?
           begin
             Xbookmark::Keystore::OnePassword.new.read(op_ref)
-          rescue Xbookmark::Keystore::OnePassword::NotSignedInError => e
+          rescue Xbookmark::Keystore::OnePassword::NotSignedInError,
+                 Xbookmark::Keystore::OnePassword::TimeoutError => e
             warn "Warning: binding #{prov.name} without verification (#{e.message})"
           rescue Xbookmark::Error, SystemCallError => e
             warn "Refusing to bind #{prov.name}: op read failed: #{e.message}"
@@ -282,17 +284,33 @@ module Xbookmark
         end
 
         value = read_secret_from_stdin("Enter #{prov.name} key (input hidden): ")
+        # A nil return means stdin reached EOF / was closed before any line was
+        # read (e.g. a broken pipe in a script), which is distinct from an
+        # entered-but-empty line; report it separately to aid debugging.
+        if value.nil?
+          warn "No input received on stdin (EOF); nothing stored."
+          exit 1
+        end
         # Reject whitespace-only input, not just "", so the store-time emptiness
         # check matches the Resolver's `non_empty?` (which strips before
         # checking). Otherwise a pure-spaces secret would be written here yet
         # report "backend returned no value" at `auth show` time.
-        if value.to_s.strip.empty?
+        if value.strip.empty?
           warn "No value entered; nothing stored."
           exit 1
         end
 
-        backend.set(prov.account, value)
-        Xbookmark::Keystore::AuthConfig.new.bind_keychain(prov)
+        # Funnel a backend store failure (locked keyring, secret-tool DBus
+        # error) through warn+exit 1 like every other auth path, instead of
+        # letting a raw Xbookmark::Error backtrace escape after the user has
+        # already typed their key into the hidden prompt.
+        begin
+          backend.set(prov.account, value)
+          Xbookmark::Keystore::AuthConfig.new.bind_keychain(prov)
+        rescue Xbookmark::Error => e
+          warn "Could not store #{prov.name} key in #{backend.name}: #{e.message}"
+          exit 1
+        end
         puts "Stored #{prov.name} in #{backend.name}."
       end
 
@@ -313,7 +331,10 @@ module Xbookmark
         else
           value = $stdin.gets
         end
-        value.to_s.chomp
+        # `gets` returns nil at EOF / on a closed stdin; preserve that so the
+        # caller can distinguish it from an entered-but-empty line.
+        return nil if value.nil?
+        value.chomp
       end
     end
   end
