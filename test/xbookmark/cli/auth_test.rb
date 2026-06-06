@@ -171,6 +171,25 @@ describe Xbookmark::CLI::Auth do
       assert_match(/keyring is locked/, err)
     end
 
+    it "names the stored-but-unrouted state when the auth.toml write fails after the store" do
+      stub_platform_linux
+      keychain_double = mock("kc")
+      keychain_double.expects(:set).with("openrouter", "sk-secret").returns(true)
+      keychain_double.stubs(:name).returns("libsecret")
+      Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
+      Xbookmark::Keystore::Libsecret.stubs(:new).returns(keychain_double)
+      # The local auth.toml routing write fails (e.g. EACCES) *after* the secret
+      # is already stored: the message must name the stored-but-unrouted state
+      # rather than claiming the store failed or leaking a raw backtrace.
+      Xbookmark::Keystore::AuthConfig.any_instance.stubs(:bind_keychain)
+        .raises(Errno::EACCES, "auth.toml")
+
+      stdin = StringIO.new("sk-secret\n")
+      def stdin.tty?; false; end
+      err = run_cli_expect_exit("login", "openrouter", stdin: stdin)
+      assert_match(/saved but unrouted/, err)
+    end
+
     it "rejects invalid provider names with a clean exit, not a backtrace" do
       stub_platform_linux
       Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
@@ -288,6 +307,45 @@ describe Xbookmark::CLI::Auth do
       cfg = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
       assert_equal "1password", cfg.lookup("openrouter")[:backend]
     end
+
+    it "deletes the old keychain secret when re-binding a keychain provider to 1Password" do
+      stub_platform_linux
+      Xbookmark::Keystore::OnePassword.stubs(:available?).returns(false)
+      keychain_double = mock("kc")
+      # The previously stored keychain secret must be deleted before the op
+      # binding is persisted, so the key is not orphaned in the OS keyring.
+      keychain_double.expects(:delete).with("openrouter").returns(true)
+      Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
+      Xbookmark::Keystore::Libsecret.stubs(:new).returns(keychain_double)
+
+      cfg = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
+      cfg.bind_keychain("openrouter")
+
+      out, _err = run_cli("bind", "openrouter", "op://Personal/OR/cred")
+      assert_match(/Bound openrouter to op:/, out)
+
+      reloaded = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
+      assert_equal "1password", reloaded.lookup("openrouter")[:backend]
+    end
+
+    it "keeps the keychain routing and does not bind when the old secret cannot be deleted" do
+      stub_platform_linux
+      Xbookmark::Keystore::OnePassword.stubs(:available?).returns(false)
+      keychain_double = mock("kc")
+      keychain_double.expects(:delete).with("openrouter").returns(false)
+      keychain_double.stubs(:name).returns("libsecret")
+      Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
+      Xbookmark::Keystore::Libsecret.stubs(:new).returns(keychain_double)
+
+      cfg = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
+      cfg.bind_keychain("openrouter")
+
+      assert_raises(SystemExit) { run_cli("bind", "openrouter", "op://Personal/OR/cred") }
+
+      reloaded = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
+      assert_equal "keychain", reloaded.lookup("openrouter")[:backend],
+        "the op binding must not be persisted while the old secret is orphaned"
+    end
   end
 
   describe "list" do
@@ -388,6 +446,22 @@ describe Xbookmark::CLI::Auth do
       keychain_double.expects(:delete).with("openrouter").returns(true)
       Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
       Xbookmark::Keystore::Libsecret.stubs(:new).returns(keychain_double)
+
+      cfg = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
+      cfg.bind_keychain("openrouter")
+
+      out, _err = run_cli("rm", "openrouter")
+      assert_match(/Removed openrouter/, out)
+
+      reloaded = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
+      assert_nil reloaded.lookup("openrouter")
+    end
+
+    it "deletes via the macOS Keychain backend on darwin" do
+      stub_platform_macos
+      keychain_double = mock("kc")
+      keychain_double.expects(:delete).with("openrouter").returns(true)
+      Xbookmark::Keystore::Keychain.stubs(:new).returns(keychain_double)
 
       cfg = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
       cfg.bind_keychain("openrouter")

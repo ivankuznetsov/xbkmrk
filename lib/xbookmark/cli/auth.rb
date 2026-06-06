@@ -49,6 +49,8 @@ module Xbookmark
         require_relative "../keystore/provider"
         require_relative "../keystore/auth_config"
         require_relative "../keystore/one_password"
+        require_relative "../keystore/keychain"
+        require_relative "../keystore/libsecret"
 
         prov = parse_provider(provider)
         unless op_ref.to_s.start_with?("op://")
@@ -75,6 +77,29 @@ module Xbookmark
         end
 
         cfg = load_auth_config
+
+        # If the provider currently routes to the platform keychain, delete that
+        # stored secret *before* persisting the 1Password binding. Otherwise the
+        # key the user believes now lives only in 1Password is still resident in
+        # the OS keychain — the same orphan the symmetric `rm` path deliberately
+        # avoids. If the backend is unavailable or the delete fails, keep the
+        # existing routing (do not persist the op binding) and surface it so the
+        # user can retry, rather than silently orphaning the keychain secret.
+        existing = cfg.lookup(prov)
+        if existing && existing[:backend] == "keychain"
+          backend = pick_keychain_backend
+          unless backend
+            warn "No platform keychain available to delete #{prov.name}'s previously stored secret; " \
+              "leaving the existing keychain routing in place. Install libsecret (`secret-tool`) on Linux."
+            exit 1
+          end
+          unless backend.delete(prov.account)
+            warn "Failed to delete #{prov.name}'s old secret from #{backend.name}; " \
+              "leaving the existing keychain routing in place so the secret is not orphaned."
+            exit 1
+          end
+        end
+
         cfg.bind_one_password(prov, op_ref)
 
         puts "Bound #{prov.name} to #{op_ref}."
@@ -306,15 +331,31 @@ module Xbookmark
           exit 1
         end
 
-        # Funnel a backend store failure (locked keyring, secret-tool DBus
-        # error) through warn+exit 1 like every other auth path, instead of
+        # The store and the routing write fail in different ways and mean
+        # different things, so rescue them separately. A backend.set failure
+        # (locked keyring, secret-tool DBus error) means nothing was stored —
+        # funnel it through warn+exit 1 like every other auth path instead of
         # letting a raw Xbookmark::Error backtrace escape after the user has
         # already typed their key into the hidden prompt.
         begin
           backend.set(prov.account, value)
-          Xbookmark::Keystore::AuthConfig.new.bind_keychain(prov)
         rescue Xbookmark::Error => e
           warn "Could not store #{prov.name} key in #{backend.name}: #{e.message}"
+          exit 1
+        end
+
+        # bind_keychain is a local auth.toml write, so it fails *after* the
+        # secret is already in the backend. A SystemCallError (EACCES/EROFS/
+        # ENOSPC from mkdir_p/Tempfile/rename/flock) or a malformed-file
+        # Xbookmark::Error here leaves the key stored but unrouted — name that
+        # state explicitly instead of claiming the store failed or letting a raw
+        # backtrace escape.
+        begin
+          Xbookmark::Keystore::AuthConfig.new.bind_keychain(prov)
+        rescue Xbookmark::Error, SystemCallError => e
+          warn "Stored #{prov.name} in #{backend.name}, but failed to record its routing " \
+            "in auth.toml: #{e.message}. The secret is saved but unrouted; re-run " \
+            "`xbookmark auth login #{prov.name}` once the config dir is writable."
           exit 1
         end
         puts "Stored #{prov.name} in #{backend.name}."
