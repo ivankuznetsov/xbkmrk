@@ -106,8 +106,14 @@ module Xbookmark
           end
         end
 
+        # The env-var name is derived by lowercasing the captured group, so a
+        # provider's hyphens have already been collapsed to underscores by
+        # `Provider#env_key` (`foo-bar` -> XBOOKMARK_FOO_BAR_KEY -> `foo_bar`).
+        # Configured rows keep the hyphen, so compare in the underscore form or
+        # a hyphenated provider that also exports its env var lists twice
+        # (`foo-bar/keychain` + phantom `foo_bar/env`).
         env_rows = env_sources.filter_map do |name, sources|
-          next if rows.any? { |r| r[0] == name }
+          next if rows.any? { |r| r[0].tr("-", "_") == name }
           [name, "env", sources[:canonical] || sources[:legacy]]
         end
 

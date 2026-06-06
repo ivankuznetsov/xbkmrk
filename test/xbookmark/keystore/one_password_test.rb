@@ -93,10 +93,10 @@ describe Xbookmark::Keystore::OnePassword do
     assert_match(/some op error/, error.message)
   end
 
-  it "kills and reaps the op child and raises TimeoutError on timeout" do
+  it "TERMs and reaps the op child and raises TimeoutError on timeout" do
     wait_thr = mock("wait_thr")
-    wait_thr.stubs(:join).with(1).returns(nil)     # never completed -> timed out
-    wait_thr.stubs(:join).with.returns(wait_thr)   # reaped after the kill
+    wait_thr.stubs(:join).with(1).returns(nil)                              # read timed out
+    wait_thr.stubs(:join).with(described_class::TERM_GRACE).returns(wait_thr) # exits on TERM
     wait_thr.stubs(:pid).returns(4242)
     Open3.stubs(:popen3).returns([StringIO.new, StringIO.new, StringIO.new, wait_thr])
     Process.expects(:kill).with("TERM", 4242)
@@ -106,6 +106,22 @@ describe Xbookmark::Keystore::OnePassword do
     end
     assert_match(/timed out after 1s/, error.message)
     assert_match(/op signin/i, error.message)
+  end
+
+  it "escalates to KILL and reaps when the op child ignores TERM" do
+    wait_thr = mock("wait_thr")
+    wait_thr.stubs(:join).with(1).returns(nil)                          # read timed out
+    wait_thr.stubs(:join).with(described_class::TERM_GRACE).returns(nil) # ignores TERM
+    wait_thr.stubs(:join).with.returns(wait_thr)                        # reaped after KILL
+    wait_thr.stubs(:pid).returns(4242)
+    Open3.stubs(:popen3).returns([StringIO.new, StringIO.new, StringIO.new, wait_thr])
+    kill_seq = sequence("kill_seq")
+    Process.expects(:kill).with("TERM", 4242).in_sequence(kill_seq)
+    Process.expects(:kill).with("KILL", 4242).in_sequence(kill_seq)
+
+    assert_raises(Xbookmark::Keystore::OnePassword::TimeoutError) do
+      backend.read("op://Personal/Slow/cred", timeout: 1)
+    end
   end
 
   it "TimeoutError is an Xbookmark::Error so callers can rescue uniformly" do

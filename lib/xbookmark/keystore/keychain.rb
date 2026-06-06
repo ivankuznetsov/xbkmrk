@@ -62,6 +62,14 @@ module Xbookmark
           "-s", Xbookmark::Keystore::SERVICE, "-a", account.to_s
         )
         return true if status.success?
+        # A signal-killed `security` has no exit status (exitstatus is nil);
+        # that is never a clean "not found", so surface it (mirroring `get`)
+        # rather than letting `auth rm` print a misleading "Failed to delete"
+        # that hides the abnormal termination from the user.
+        if status.exitstatus.nil?
+          raise Xbookmark::Error,
+            "security delete-generic-password terminated abnormally (killed by a signal)"
+        end
         # exit 44 == errSecItemNotFound: there is nothing to delete, so report
         # success. This lets `auth rm` clear stale auth.toml routing after the
         # secret was already removed out-of-band, instead of wedging on a

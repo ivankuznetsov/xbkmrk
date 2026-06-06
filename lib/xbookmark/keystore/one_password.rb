@@ -31,6 +31,12 @@ module Xbookmark
       # interactively cannot block a non-interactive command indefinitely.
       DEFAULT_TIMEOUT = 10
 
+      # Grace period after `TERM` before escalating to `KILL` when reaping a
+      # timed-out `op` child. An `op` that traps/ignores `TERM` or is blocked
+      # on `/dev/tty` would otherwise keep the post-TERM reap join blocking
+      # forever, re-hanging the very caller DEFAULT_TIMEOUT is meant to cap.
+      TERM_GRACE = 2
+
       def self.available?
         !which("op").nil?
       end
@@ -93,9 +99,16 @@ module Xbookmark
       end
 
       # Terminate and reap the timed-out `op` child so the cap actually stops
-      # the subprocess instead of orphaning it.
-      def terminate(wait_thr)
+      # the subprocess instead of orphaning it. `TERM` first, but bound the reap
+      # join to TERM_GRACE and escalate to an un-ignorable `KILL` if the child
+      # outlives it — otherwise an `op` that traps/ignores `TERM` (or is blocked
+      # on `/dev/tty`) would leave the join blocking forever, defeating the
+      # wall-clock cap and re-hanging `auth bind`/resolve.
+      def terminate(wait_thr, grace: TERM_GRACE)
         Process.kill("TERM", wait_thr.pid)
+        return unless wait_thr.join(grace).nil?
+
+        Process.kill("KILL", wait_thr.pid)
         wait_thr.join
       rescue Errno::ESRCH
         # The child already exited between the timeout and our signal; nothing
