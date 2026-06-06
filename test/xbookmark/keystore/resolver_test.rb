@@ -158,6 +158,51 @@ describe Xbookmark::Keystore::Resolver do
     end
   end
 
+  it "falls back to the legacy alias when the canonical env var is exported but blank" do
+    Dir.mktmpdir do |dir|
+      cfg = build_config(dir)
+      stderr = StringIO.new
+      resolver = described_class.new(
+        config: cfg,
+        env: { "XBOOKMARK_X_KEY" => "", "XBOOKMARK_X_API_KEY" => "legacy-key" },
+        keychain: FakeBackend.new,
+        warn_io: stderr
+      )
+
+      # A plain `canonical || legacy` would short-circuit on the blank "" and
+      # never consult the legacy alias; selection must be first-non-empty.
+      assert_equal "legacy-key", resolver.resolve("x")
+    end
+  end
+
+  it "falls back to the legacy alias in CI when the canonical env var is blank" do
+    Dir.mktmpdir do |dir|
+      cfg = build_config(dir)
+      stderr = StringIO.new
+      resolver = described_class.new(
+        config: cfg,
+        env: { "CI" => "true", "XBOOKMARK_X_KEY" => "", "XBOOKMARK_X_API_KEY" => "legacy-ci" },
+        keychain: FakeBackend.new,
+        warn_io: stderr
+      )
+
+      assert_equal "legacy-ci", resolver.resolve("x")
+    end
+  end
+
+  it "translates a missing op CLI (Errno::ENOENT) into an actionable error" do
+    Dir.mktmpdir do |dir|
+      cfg = build_config(dir) { |c| c.bind_one_password("openrouter", "op://Personal/OR/cred") }
+      exploding = Object.new
+      def exploding.read(_ref) = raise Errno::ENOENT, "op"
+      resolver = described_class.new(config: cfg, env: {}, one_password: exploding)
+
+      err = assert_raises(Xbookmark::Error) { resolver.resolve("openrouter") }
+      assert_match(/op` CLI is/, err.message)
+      assert_match(/1Password/, err.message)
+    end
+  end
+
   it "raises with both subcommand hints when nothing is configured" do
     Dir.mktmpdir do |dir|
       cfg = build_config(dir)

@@ -13,7 +13,9 @@ module Xbookmark
     # Runtime priority chain for resolving a provider's API key.
     #
     # Order:
-    #   1. CI / `XBOOKMARK_KEYS_FROM_ENV=1`        -> env[provider.env_key]
+    #   1. CI / `XBOOKMARK_KEYS_FROM_ENV=1`        -> env[provider.env_key],
+    #      with the legacy `XBOOKMARK_<PROVIDER>_API_KEY` form also recognised
+    #      here (with a one-time deprecation warning), exactly as in step 3
     #   2. auth.toml routing:
     #        backend = "1password" -> op read <ref>
     #        backend = "keychain"  -> platform keychain (libsecret on Linux,
@@ -46,7 +48,7 @@ module Xbookmark
         prov = provider.is_a?(Provider) ? provider : Provider.parse(provider)
 
         if ci_env?
-          value = @env[prov.env_key] || legacy_env_value(prov)
+          value = env_or_legacy(prov)
           return value if non_empty?(value)
           raise missing_error(prov, source: "env")
         end
@@ -60,7 +62,7 @@ module Xbookmark
               "Re-run `xbookmark auth login #{prov.name}` or update the binding."
         end
 
-        env_value = @env[prov.env_key] || legacy_env_value(prov)
+        env_value = env_or_legacy(prov)
         return env_value if non_empty?(env_value)
 
         raise missing_error(prov)
@@ -75,7 +77,7 @@ module Xbookmark
       def resolve_from_entry(provider, entry)
         case entry[:backend]
         when "1password"
-          one_password_backend.read(entry[:ref])
+          one_password_read(provider, entry[:ref])
         when "keychain"
           keychain_get(provider)
         else
@@ -84,9 +86,27 @@ module Xbookmark
         end
       end
 
+      # Resolve a 1Password reference, enforcing the "ref required iff
+      # 1password" invariant (a hand-edited/partial row could reach here with a
+      # missing ref) and translating a missing `op` CLI into an actionable
+      # Xbookmark::Error instead of a raw Errno::ENOENT, mirroring keychain_get.
+      def one_password_read(provider, ref)
+        if ref.nil? || ref.to_s.strip.empty?
+          raise Xbookmark::Error,
+            "auth.toml routes #{provider.name} to 1Password but records no op:// " \
+              "reference. Re-run `xbookmark auth bind #{provider.name} op://...`."
+        end
+        one_password_backend.read(ref)
+      rescue Errno::ENOENT
+        raise Xbookmark::Error,
+          "auth.toml routes #{provider.name} to 1Password, but the `op` CLI is " \
+            "not installed or not on PATH. Install the 1Password CLI, or re-bind " \
+            "with `xbookmark auth login #{provider.name}`."
+      end
+
       # Read from the platform keychain, translating a missing CLI into an
       # actionable Xbookmark::Error rather than letting a raw Errno::ENOENT
-      # (from the `secret-tool` shell-out) escape to `auth show`/sync callers.
+      # (from the `secret-tool` shell-out) escape to the `auth show` caller.
       # An injected @keychain (tests) skips the availability probe.
       def keychain_get(provider)
         if !@keychain && !@platform.macos? && !Libsecret.available?
@@ -110,6 +130,17 @@ module Xbookmark
 
       def one_password_backend
         @one_password ||= OnePassword.new
+      end
+
+      # First *non-empty* of [canonical env key, legacy _API_KEY alias].
+      # A plain `canonical || legacy` would let an exported-but-blank
+      # `XBOOKMARK_<P>_KEY` short-circuit the `||` (Ruby treats "" as truthy),
+      # silently defeating the legacy-compat fallback; select on non_empty?
+      # instead so a blank canonical still defers to a valid legacy value.
+      def env_or_legacy(provider)
+        canonical = @env[provider.env_key]
+        return canonical if non_empty?(canonical)
+        legacy_env_value(provider)
       end
 
       def legacy_env_value(provider)
