@@ -72,7 +72,7 @@ module Xbookmark
           end
         end
 
-        cfg = Xbookmark::Keystore::AuthConfig.new
+        cfg = load_auth_config
         cfg.bind_one_password(prov, op_ref)
 
         puts "Bound #{prov.name} to #{op_ref}."
@@ -80,9 +80,7 @@ module Xbookmark
 
       desc "list", "List configured provider credentials (never prints values)"
       def list
-        require_relative "../keystore/auth_config"
-
-        cfg = Xbookmark::Keystore::AuthConfig.new
+        cfg = load_auth_config
         rows = cfg.entries.map do |name, entry|
           [name, entry[:backend], entry[:ref].to_s]
         end
@@ -150,7 +148,7 @@ module Xbookmark
         require_relative "../keystore/auth_config"
 
         prov = parse_provider(provider)
-        cfg = Xbookmark::Keystore::AuthConfig.new
+        cfg = load_auth_config
         entry = cfg.lookup(prov)
 
         unless entry
@@ -254,6 +252,19 @@ module Xbookmark
         exit 1
       end
 
+      # Load auth.toml, surfacing a malformed-file error (raised by
+      # AuthConfig#load_entries) as a clean one-line message + exit 1 rather
+      # than a raw backtrace. These inspect/repair commands (`list`/`bind`/`rm`)
+      # are exactly what a user reaches for when the file is broken, so they
+      # must funnel the error the same way `show`/`parse_provider` do.
+      def load_auth_config
+        require_relative "../keystore/auth_config"
+        Xbookmark::Keystore::AuthConfig.new
+      rescue Xbookmark::Error => e
+        warn e.message
+        exit 1
+      end
+
       def provider_login(provider_arg)
         require_relative "../keystore"
         require_relative "../keystore/provider"
@@ -271,7 +282,11 @@ module Xbookmark
         end
 
         value = read_secret_from_stdin("Enter #{prov.name} key (input hidden): ")
-        if value.to_s.empty?
+        # Reject whitespace-only input, not just "", so the store-time emptiness
+        # check matches the Resolver's `non_empty?` (which strips before
+        # checking). Otherwise a pure-spaces secret would be written here yet
+        # report "backend returned no value" at `auth show` time.
+        if value.to_s.strip.empty?
           warn "No value entered; nothing stored."
           exit 1
         end
