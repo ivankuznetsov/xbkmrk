@@ -160,6 +160,22 @@ describe Xbookmark::Keystore::Resolver do
     end
   end
 
+  it "uses the macOS Keychain backend on darwin" do
+    Dir.mktmpdir do |dir|
+      cfg = build_config(dir) { |c| c.bind_keychain("openrouter") }
+      # Exercise keychain_backend's darwin branch (`Keychain.new` on macOS): the
+      # whole suite otherwise routes keychain resolution through libsecret, so a
+      # regression wiring the wrong backend on darwin would pass unnoticed.
+      platform = Object.new
+      def platform.macos? = true
+      def platform.linux? = false
+      Xbookmark::Keystore::Keychain.stubs(:new).returns(FakeBackend.new("openrouter" => "sk-mac"))
+      resolver = described_class.new(config: cfg, env: {}, platform: platform)
+
+      assert_equal "sk-mac", resolver.resolve("openrouter")
+    end
+  end
+
   it "translates a raw Errno::ENOENT from the keychain backend into an Xbookmark::Error" do
     Dir.mktmpdir do |dir|
       cfg = build_config(dir) { |c| c.bind_keychain("openrouter") }

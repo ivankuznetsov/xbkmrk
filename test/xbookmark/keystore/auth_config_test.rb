@@ -191,6 +191,44 @@ describe Xbookmark::Keystore::AuthConfig do
     end
   end
 
+  it "lets two instances from the same on-disk state both survive concurrent writes" do
+    Dir.mktmpdir do |dir|
+      path = tmp_config_path(dir)
+      # Both instances load the same (empty) state. Because update! re-reads the
+      # file *inside* the lock rather than serialising its possibly-stale
+      # @entries, the second writer must build on the first's row instead of
+      # clobbering it — the documented concurrency contract.
+      a = described_class.new(path: path)
+      b = described_class.new(path: path)
+
+      a.bind_keychain("openrouter")
+      b.bind_one_password("anthropic", "op://Personal/Anthropic/cred")
+
+      reloaded = described_class.new(path: path)
+      assert_equal "keychain", reloaded.lookup("openrouter")[:backend],
+        "the first writer's row must survive the second writer's update"
+      assert_equal "1password", reloaded.lookup("anthropic")[:backend]
+    end
+  end
+
+  it "purges a load-dropped invalid row from disk on the next unrelated write" do
+    Dir.mktmpdir do |dir|
+      path = tmp_config_path(dir)
+      # The [stale] row has an unknown backend, so it is dropped at load time but
+      # still physically on disk. An unrelated bind must re-serialise only the
+      # survivors, making the documented "removed on next write" side effect real.
+      File.write(path, %([openrouter]\nbackend = "keychain"\n\n[stale]\nbackend = "vault"\n))
+      cfg = described_class.new(path: path, warn_io: StringIO.new)
+
+      cfg.bind_keychain("anthropic")
+
+      contents = File.read(path)
+      refute_match(/\[stale\]/, contents, "the load-dropped row must be gone from disk")
+      assert_match(/\[openrouter\]/, contents)
+      assert_match(/\[anthropic\]/, contents)
+    end
+  end
+
   it "accepts a Provider value object via duck-typing on #account" do
     Dir.mktmpdir do |dir|
       path = tmp_config_path(dir)

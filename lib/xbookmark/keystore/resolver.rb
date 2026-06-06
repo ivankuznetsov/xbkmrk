@@ -106,8 +106,9 @@ module Xbookmark
 
       # Read from the platform keychain, translating a missing CLI into an
       # actionable Xbookmark::Error rather than letting a raw Errno::ENOENT
-      # (from the `secret-tool` shell-out) escape to the `auth show` caller.
-      # An injected @keychain (tests) skips the availability probe.
+      # (from the keychain shell-out — `secret-tool` on Linux, `security` on
+      # macOS) escape to the `auth show` caller. An injected @keychain (tests)
+      # skips the availability probe.
       def keychain_get(provider)
         if !@keychain && !@platform.macos? && !linux_libsecret_available?
           raise Xbookmark::Error, keychain_unavailable_message(provider)
