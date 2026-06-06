@@ -18,9 +18,15 @@ module Xbookmark
     #        backend = "keychain"  -> platform keychain (libsecret on Linux,
     #                                 Keychain on macOS)
     #   3. env[provider.env_key], with the legacy
-    #      `XBOOKMARK_<PROVIDER>_API_KEY` form also recognised once
+    #      `XBOOKMARK_<PROVIDER>_API_KEY` form also recognised (with a
+    #      one-time deprecation warning)
     #   4. raise Xbookmark::Error with actionable subcommand hints
     class Resolver
+      # Process-global memo of which legacy env vars we've already warned about,
+      # so the deprecation notice prints at most once per process. Intentionally
+      # shared across Resolver instances — this is "warn once per CLI run", not
+      # per-instance state. A long-running host (e.g. the test runner) should
+      # `.clear` it between runs; tests do exactly that in their `before` block.
       LEGACY_WARNED = {}
       private_constant :LEGACY_WARNED
 
