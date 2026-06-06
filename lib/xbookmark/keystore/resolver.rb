@@ -109,12 +109,23 @@ module Xbookmark
       # (from the `secret-tool` shell-out) escape to the `auth show` caller.
       # An injected @keychain (tests) skips the availability probe.
       def keychain_get(provider)
-        if !@keychain && !@platform.macos? && !Libsecret.available?
+        if !@keychain && !@platform.macos? && !linux_libsecret_available?
           raise Xbookmark::Error, keychain_unavailable_message(provider)
         end
         keychain_backend.get(provider.account)
       rescue Errno::ENOENT
         raise Xbookmark::Error, keychain_unavailable_message(provider)
+      end
+
+      # Mirror Keystore#libsecret_available?: on Linux, libsecret needs both the
+      # `secret-tool` binary *and* a D-Bus session. Probing only the binary (as
+      # this did before) let a D-Bus-less host fall through to a raw
+      # "secret-tool lookup failed" from the backend instead of the actionable
+      # keychain-unavailable hint.
+      def linux_libsecret_available?
+        return false unless @platform.linux?
+        return false if @env["DBUS_SESSION_BUS_ADDRESS"].to_s.strip.empty?
+        Libsecret.available?
       end
 
       def keychain_unavailable_message(provider)
@@ -155,7 +166,7 @@ module Xbookmark
       def warn_legacy_once(provider, legacy_key)
         return if LEGACY_WARNED[legacy_key]
         LEGACY_WARNED[legacy_key] = true
-        @warn_io.puts(
+        @warn_io&.puts(
           "[xbookmark] #{legacy_key} is deprecated; use #{provider.env_key} instead."
         )
       end

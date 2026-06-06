@@ -35,12 +35,20 @@ module Xbookmark
           return nil if out.to_s.empty?
           return out
         end
+        # A signal-killed `secret-tool` has no exit status (exitstatus is nil);
+        # that is never a clean "not found", so surface it rather than masking
+        # it as an absent secret and prompting a destructive re-login overwrite.
+        if status.exitstatus.nil?
+          raise Xbookmark::Error,
+            "secret-tool lookup terminated abnormally (killed by a signal)"
+        end
         # `secret-tool lookup` exits non-zero with no stderr when the item is
         # simply absent (a genuine "not found"). A non-empty stderr means a
         # transient failure — locked keyring, no D-Bus session — and collapsing
         # that to nil would mislead the Resolver into reporting the credential
         # as permanently missing and prompting a destructive overwrite. Surface
-        # it instead.
+        # it instead. (The exact not-found exit code is assumed, not verified —
+        # see wiki/gaps.md.)
         raise Xbookmark::Error,
           "secret-tool lookup failed: #{err.to_s.strip}" unless err.to_s.strip.empty?
         nil
@@ -61,12 +69,19 @@ module Xbookmark
       end
 
       def delete(account)
-        _out, _err, status = Open3.capture3(
+        _out, err, status = Open3.capture3(
           "secret-tool", "clear",
           "service", Xbookmark::Keystore::SERVICE,
           "account", account.to_s
         )
-        status.success?
+        return true if status.success?
+        # `secret-tool clear` can exit non-zero with no stderr when there is no
+        # matching item to clear (already absent). Treat that like Keychain's
+        # exit-44 tolerance so `auth rm` can clear stale auth.toml routing
+        # instead of wedging on a missing secret — nothing can be orphaned when
+        # nothing exists. A non-empty stderr is a real failure; report it as
+        # not-deleted so the routing is kept.
+        err.to_s.strip.empty?
       end
 
       def list_accounts

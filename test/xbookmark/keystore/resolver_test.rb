@@ -108,11 +108,55 @@ describe Xbookmark::Keystore::Resolver do
       Xbookmark::Keystore::Libsecret.stubs(:available?).returns(false)
       platform = Object.new
       def platform.macos? = false
-      resolver = described_class.new(config: cfg, env: {}, platform: platform)
+      def platform.linux? = true
+      resolver = described_class.new(
+        config: cfg,
+        env: { "DBUS_SESSION_BUS_ADDRESS" => "unix:path=/run/user/1000/bus" },
+        platform: platform
+      )
 
       err = assert_raises(Xbookmark::Error) { resolver.resolve("openrouter") }
       assert_match(/platform keychain/, err.message)
       assert_match(/secret-tool/, err.message)
+    end
+  end
+
+  it "raises the actionable hint (not a raw secret-tool error) on a D-Bus-less Linux host" do
+    Dir.mktmpdir do |dir|
+      cfg = build_config(dir) { |c| c.bind_keychain("openrouter") }
+      # secret-tool is on PATH, but there is no D-Bus session: mirror Keystore's
+      # gate so the user gets the actionable hint instead of the backend's raw
+      # "secret-tool lookup failed". The backend must never be constructed here.
+      Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
+      Xbookmark::Keystore::Libsecret.expects(:new).never
+      platform = Object.new
+      def platform.macos? = false
+      def platform.linux? = true
+      resolver = described_class.new(
+        config: cfg, env: { "DBUS_SESSION_BUS_ADDRESS" => "" }, platform: platform
+      )
+
+      err = assert_raises(Xbookmark::Error) { resolver.resolve("openrouter") }
+      assert_match(/platform keychain/, err.message)
+      assert_match(/secret-tool/, err.message)
+    end
+  end
+
+  it "uses libsecret when secret-tool and a D-Bus session are both present" do
+    Dir.mktmpdir do |dir|
+      cfg = build_config(dir) { |c| c.bind_keychain("openrouter") }
+      platform = Object.new
+      def platform.macos? = false
+      def platform.linux? = true
+      Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
+      Xbookmark::Keystore::Libsecret.stubs(:new).returns(FakeBackend.new("openrouter" => "sk-dbus"))
+      resolver = described_class.new(
+        config: cfg,
+        env: { "DBUS_SESSION_BUS_ADDRESS" => "unix:path=/run/user/1000/bus" },
+        platform: platform
+      )
+
+      assert_equal "sk-dbus", resolver.resolve("openrouter")
     end
   end
 

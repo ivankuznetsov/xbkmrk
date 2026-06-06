@@ -62,20 +62,24 @@ describe Xbookmark::Keystore do
 
     it "falls back to EnvFile on Linux when secret-tool / DBUS unavailable" do
       stub_platform_linux
+      orig_dbus = ENV["DBUS_SESSION_BUS_ADDRESS"]
       ENV.delete("DBUS_SESSION_BUS_ADDRESS")
       Xbookmark::Keystore::Libsecret.stubs(:available?).returns(false)
       ks = described_class.new
       assert_kind_of Xbookmark::Keystore::EnvFile, ks.backend
+    ensure
+      ENV["DBUS_SESSION_BUS_ADDRESS"] = orig_dbus if orig_dbus
     end
 
     it "picks Libsecret on Linux when secret-tool + DBUS are present" do
       stub_platform_linux
+      orig_dbus = ENV["DBUS_SESSION_BUS_ADDRESS"]
       ENV["DBUS_SESSION_BUS_ADDRESS"] = "/run/user/1000/bus"
       Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
       ks = described_class.new
       assert_kind_of Xbookmark::Keystore::Libsecret, ks.backend
     ensure
-      ENV.delete("DBUS_SESSION_BUS_ADDRESS")
+      orig_dbus.nil? ? ENV.delete("DBUS_SESSION_BUS_ADDRESS") : (ENV["DBUS_SESSION_BUS_ADDRESS"] = orig_dbus)
     end
   end
 end
@@ -132,6 +136,14 @@ describe Xbookmark::Keystore::Libsecret do
     assert_match(/D-Bus/, error.message)
   end
 
+  it "raises when secret-tool lookup is killed by a signal (nil exit status)" do
+    status = process_status(success: false, exitstatus: nil)
+    Open3.stubs(:capture3).returns(["", "", status])
+
+    error = assert_raises(Xbookmark::Error) { backend.get("openrouter") }
+    assert_match(/abnormally/, error.message)
+  end
+
   it "passes value via stdin to secret-tool store" do
     status = process_status(success: true)
     Open3.expects(:capture3).with(
@@ -176,6 +188,24 @@ describe Xbookmark::Keystore::Libsecret do
 
     assert_equal [], backend.list_accounts
   end
+
+  it "treats a clear with no matching item (non-zero, empty stderr) as a successful delete" do
+    status = process_status(success: false)
+    Open3.expects(:capture3).with(
+      "secret-tool", "clear",
+      "service", "xbookmark",
+      "account", "openrouter"
+    ).returns(["", "", status])
+
+    assert_equal true, backend.delete("openrouter")
+  end
+
+  it "reports a failed delete when secret-tool clear errors on stderr" do
+    status = process_status(success: false)
+    Open3.stubs(:capture3).returns(["", "Cannot autolaunch D-Bus", status])
+
+    assert_equal false, backend.delete("openrouter")
+  end
 end
 
 describe Xbookmark::Keystore::Keychain do
@@ -210,6 +240,14 @@ describe Xbookmark::Keystore::Keychain do
 
     error = assert_raises(Xbookmark::Error) { backend.get("openrouter") }
     assert_match(/User interaction is not allowed/, error.message)
+  end
+
+  it "raises when find-generic-password is killed by a signal (nil exit status)" do
+    status = process_status(success: false, exitstatus: nil)
+    Open3.stubs(:capture3).returns(["", "", status])
+
+    error = assert_raises(Xbookmark::Error) { backend.get("openrouter") }
+    assert_match(/abnormally/, error.message)
   end
 
   it "treats errSecItemNotFound (exit 44) as a successful delete" do
