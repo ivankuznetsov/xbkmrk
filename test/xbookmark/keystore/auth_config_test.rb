@@ -107,6 +107,45 @@ describe Xbookmark::Keystore::AuthConfig do
     end
   end
 
+  it "drops sections with an unrecognized backend instead of round-tripping them" do
+    Dir.mktmpdir do |dir|
+      path = tmp_config_path(dir)
+      File.write(path, %([openrouter]\nbackend = "vault"\n))
+      cfg = described_class.new(path: path)
+
+      assert_nil cfg.lookup("openrouter")
+    end
+  end
+
+  it "wraps a malformed TOML file in an Xbookmark::Error" do
+    Dir.mktmpdir do |dir|
+      path = tmp_config_path(dir)
+      File.write(path, "[openrouter\nbackend = ")
+      error = assert_raises(Xbookmark::Error) { described_class.new(path: path) }
+      assert_match(/malformed auth.toml/, error.message)
+    end
+  end
+
+  it "escapes control characters in a ref so the file stays parseable" do
+    Dir.mktmpdir do |dir|
+      path = tmp_config_path(dir)
+      cfg = described_class.new(path: path)
+      cfg.bind_one_password("openrouter", "op://Personal/OR/cred\nmalicious")
+
+      # The round-trip must survive: a raw newline would have produced an
+      # unparseable basic string.
+      reloaded = described_class.new(path: path)
+      assert_equal "op://Personal/OR/cred\nmalicious", reloaded.lookup("openrouter")[:ref]
+    end
+  end
+
+  it "rejects an injection-y provider name through Provider.parse" do
+    Dir.mktmpdir do |dir|
+      cfg = described_class.new(path: tmp_config_path(dir))
+      assert_raises(Xbookmark::Error) { cfg.bind_keychain("evil]\n[x") }
+    end
+  end
+
   it "accepts a Provider value object via duck-typing on #account" do
     Dir.mktmpdir do |dir|
       path = tmp_config_path(dir)

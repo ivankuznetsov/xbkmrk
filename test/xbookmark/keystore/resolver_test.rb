@@ -154,16 +154,28 @@ describe Xbookmark::Keystore::Resolver do
     end
   end
 
-  it "raises with a clear error on an unknown backend in auth.toml" do
+  it "drops an unknown backend from disk and treats the provider as unconfigured" do
     Dir.mktmpdir do |dir|
       path = File.join(dir, "auth.toml")
       File.write(path, %([openrouter]\nbackend = "wacky"\n))
       cfg = Xbookmark::Keystore::AuthConfig.new(path: path)
-      resolver = described_class.new(config: cfg, env: {}, keychain: FakeBackend.new)
+      assert_nil cfg.lookup("openrouter"), "unknown backend should not round-trip"
 
+      resolver = described_class.new(config: cfg, env: {}, keychain: FakeBackend.new)
       err = assert_raises(Xbookmark::Error) { resolver.resolve("openrouter") }
-      assert_match(/unknown auth.toml backend/, err.message)
+      assert_match(/auth login openrouter/, err.message)
     end
+  end
+
+  it "raises a clear error if an in-memory entry still carries an unknown backend" do
+    # AuthConfig now filters unknown backends at load time, but the Resolver
+    # keeps its defensive else branch for any entry constructed in-memory.
+    fake_config = Object.new
+    def fake_config.lookup(_provider) = { backend: "wacky" }
+    resolver = described_class.new(config: fake_config, env: {}, keychain: FakeBackend.new)
+
+    err = assert_raises(Xbookmark::Error) { resolver.resolve("openrouter") }
+    assert_match(/unknown auth.toml backend/, err.message)
   end
 
   it "accepts a Provider value object directly" do
