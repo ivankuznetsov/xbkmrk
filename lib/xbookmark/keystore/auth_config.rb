@@ -77,6 +77,12 @@ module Xbookmark
       # mutation to the freshly-loaded copy, then atomically rename into place.
       def update!
         FileUtils.mkdir_p(File.dirname(@path), mode: 0o700)
+        # The `auth.toml.lock` file is created on first write and deliberately
+        # left in place afterwards (it lives alongside auth.toml in the config
+        # dir). Unlinking it on release would reintroduce the classic flock
+        # race — a second process can be holding the same inode while we delete
+        # and recreate the path, so two writers could end up locking different
+        # inodes. The empty lockfile is harmless clutter; leaving it is correct.
         lock_path = "#{@path}.lock"
         File.open(lock_path, File::RDWR | File::CREAT, 0o600) do |lock|
           lock.flock(File::LOCK_EX)

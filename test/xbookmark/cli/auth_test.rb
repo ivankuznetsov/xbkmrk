@@ -191,6 +191,31 @@ describe Xbookmark::CLI::Auth do
       ENV.delete("XBOOKMARK_ANTHROPIC_KEY")
     end
 
+    it "reports the canonical env var as the source when the legacy alias is also set" do
+      ENV.keys.grep(/\AXBOOKMARK_.+_KEY\z/).each { |k| ENV.delete(k) }
+      ENV["XBOOKMARK_X_KEY"] = "sk-canonical"
+      ENV["XBOOKMARK_X_API_KEY"] = "sk-legacy"
+
+      out, _err = run_cli("list")
+      assert_match(/x\s+env\s+XBOOKMARK_X_KEY/, out)
+      refute_match(/XBOOKMARK_X_API_KEY/, out)
+      refute_match(/sk-/, out)
+    ensure
+      ENV.delete("XBOOKMARK_X_KEY")
+      ENV.delete("XBOOKMARK_X_API_KEY")
+    end
+
+    it "falls back to the legacy alias as the source when only it is set" do
+      ENV.keys.grep(/\AXBOOKMARK_.+_KEY\z/).each { |k| ENV.delete(k) }
+      ENV["XBOOKMARK_X_API_KEY"] = "sk-legacy"
+
+      out, _err = run_cli("list")
+      assert_match(/x\s+env\s+XBOOKMARK_X_API_KEY/, out)
+      refute_match(/sk-legacy/, out)
+    ensure
+      ENV.delete("XBOOKMARK_X_API_KEY")
+    end
+
     it "prints 'No providers configured.' when nothing is set" do
       ENV.keys.grep(/\AXBOOKMARK_.+_KEY\z/).each { |k| ENV.delete(k) }
       out, _err = run_cli("list")

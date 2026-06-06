@@ -102,6 +102,32 @@ describe Xbookmark::Keystore::Resolver do
     end
   end
 
+  it "raises an actionable error when keychain routing finds secret-tool unavailable" do
+    Dir.mktmpdir do |dir|
+      cfg = build_config(dir) { |c| c.bind_keychain("openrouter") }
+      Xbookmark::Keystore::Libsecret.stubs(:available?).returns(false)
+      platform = Object.new
+      def platform.macos? = false
+      resolver = described_class.new(config: cfg, env: {}, platform: platform)
+
+      err = assert_raises(Xbookmark::Error) { resolver.resolve("openrouter") }
+      assert_match(/platform keychain/, err.message)
+      assert_match(/secret-tool/, err.message)
+    end
+  end
+
+  it "translates a raw Errno::ENOENT from the keychain backend into an Xbookmark::Error" do
+    Dir.mktmpdir do |dir|
+      cfg = build_config(dir) { |c| c.bind_keychain("openrouter") }
+      exploding = Object.new
+      def exploding.get(_account) = raise Errno::ENOENT, "secret-tool"
+      resolver = described_class.new(config: cfg, env: {}, keychain: exploding)
+
+      err = assert_raises(Xbookmark::Error) { resolver.resolve("openrouter") }
+      assert_match(/secret-tool/, err.message)
+    end
+  end
+
   it "env fallback succeeds when no toml entry and no CI flag" do
     Dir.mktmpdir do |dir|
       cfg = build_config(dir)

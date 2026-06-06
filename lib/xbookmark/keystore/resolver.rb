@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "../keystore"
 require_relative "../paths"
 require_relative "provider"
 require_relative "auth_config"
@@ -76,11 +77,30 @@ module Xbookmark
         when "1password"
           one_password_backend.read(entry[:ref])
         when "keychain"
-          keychain_backend.get(provider.account)
+          keychain_get(provider)
         else
           raise Xbookmark::Error,
             "unknown auth.toml backend #{entry[:backend].inspect} for #{provider.name}"
         end
+      end
+
+      # Read from the platform keychain, translating a missing CLI into an
+      # actionable Xbookmark::Error rather than letting a raw Errno::ENOENT
+      # (from the `secret-tool` shell-out) escape to `auth show`/sync callers.
+      # An injected @keychain (tests) skips the availability probe.
+      def keychain_get(provider)
+        if !@keychain && !@platform.macos? && !Libsecret.available?
+          raise Xbookmark::Error, keychain_unavailable_message(provider)
+        end
+        keychain_backend.get(provider.account)
+      rescue Errno::ENOENT
+        raise Xbookmark::Error, keychain_unavailable_message(provider)
+      end
+
+      def keychain_unavailable_message(provider)
+        "auth.toml routes #{provider.name} to the platform keychain, but it is " \
+          "unavailable. Install libsecret (`secret-tool`) on Linux, then re-run " \
+          "`xbookmark auth login #{provider.name}`."
       end
 
       def keychain_backend

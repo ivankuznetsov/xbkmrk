@@ -89,22 +89,26 @@ module Xbookmark
 
         # Map each XBOOKMARK_*_KEY env var to the provider the Resolver would
         # actually route it to. The legacy `XBOOKMARK_<NAME>_API_KEY` form is an
-        # alias for provider `<name>` (not `<name>_api`), so it must be matched
+        # alias for provider `<name>` (not `<name>_api`), so it is classified
         # *before* the canonical `XBOOKMARK_<NAME>_KEY` pattern, which would
         # otherwise capture `<name>_api` and report a phantom provider.
-        seen_env = {}
-        env_rows = ENV.keys.sort.filter_map do |env_key|
-          name =
-            if (m = env_key.match(/\AXBOOKMARK_(.+)_API_KEY\z/))
-              m[1].downcase
-            elsif (m = env_key.match(/\AXBOOKMARK_(.+)_KEY\z/))
-              m[1].downcase
-            end
-          next if name.nil?
+        #
+        # When both forms are set for one provider the Resolver prefers the
+        # canonical key, so we collect both candidates per provider and report
+        # the canonical one when present — otherwise `list` would name the
+        # legacy var as the source while resolution used the canonical one.
+        env_sources = {}
+        ENV.keys.sort.each do |env_key|
+          if (m = env_key.match(/\AXBOOKMARK_(.+)_API_KEY\z/))
+            (env_sources[m[1].downcase] ||= {})[:legacy] = env_key
+          elsif (m = env_key.match(/\AXBOOKMARK_(.+)_KEY\z/))
+            (env_sources[m[1].downcase] ||= {})[:canonical] = env_key
+          end
+        end
+
+        env_rows = env_sources.filter_map do |name, sources|
           next if rows.any? { |r| r[0] == name }
-          next if seen_env.key?(name)
-          seen_env[name] = true
-          [name, "env", env_key]
+          [name, "env", sources[:canonical] || sources[:legacy]]
         end
 
         all = rows + env_rows
@@ -121,6 +125,13 @@ module Xbookmark
       end
 
       desc "show PROVIDER", "Resolve and print PROVIDER's credential (diagnostic; for scripts/CI)"
+      long_desc <<~LONG
+        Prints the resolved secret in plaintext to stdout. This is the only
+        command that emits the key itself, so treat its output as sensitive:
+        do not pipe it into log files, shell history, or anything that persists
+        it. Use it for ad-hoc diagnostics or to feed a key into a process that
+        consumes stdin, not as a logged build step.
+      LONG
       def show(provider)
         require_relative "../keystore/provider"
         require_relative "../keystore/resolver"
@@ -244,6 +255,7 @@ module Xbookmark
       end
 
       def provider_login(provider_arg)
+        require_relative "../keystore"
         require_relative "../keystore/provider"
         require_relative "../keystore/auth_config"
         require_relative "../keystore/keychain"

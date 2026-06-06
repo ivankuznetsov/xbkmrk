@@ -223,6 +223,11 @@ order: CI env shortcut, `auth.toml` routing, then `XBOOKMARK_<PROVIDER>_KEY`
 from the environment. (Today `auth show` is the command that exercises this
 resolver; use it to confirm a binding works.)
 
+> ⚠️ `auth show` prints the resolved secret in plaintext to stdout — it is the
+> one command that emits the key itself. Use it for ad-hoc checks or to feed a
+> key into a process over stdin; never wire it into a logged build step, shell
+> history, or anything that persists its output.
+
 **Linux with 1Password CLI**
 
 ```bash
