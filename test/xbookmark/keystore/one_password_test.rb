@@ -36,6 +36,23 @@ describe Xbookmark::Keystore::OnePassword do
     assert_equal "sk-abc", backend.read("op://Personal/X/cred")
   end
 
+  it "rejects blank output even when op exits successfully" do
+    status = process_status(success: true)
+    Open3.stubs(:capture3).returns(["   \n", "", status])
+
+    error = assert_raises(Xbookmark::Error) { backend.read("op://Personal/Empty/field") }
+    assert_match(/empty value/, error.message)
+  end
+
+  it "raises a NotSignedInError (an Xbookmark::Error) when op is not signed in" do
+    status = process_status(success: false)
+    Open3.stubs(:capture3).returns(["", "[ERROR] not signed in", status])
+
+    assert_raises(Xbookmark::Keystore::OnePassword::NotSignedInError) do
+      backend.read("op://Personal/X/cred")
+    end
+  end
+
   it "surfaces stderr in a raised Xbookmark::Error on failure" do
     status = process_status(success: false)
     Open3.stubs(:capture3).returns(["", "some op error", status])
