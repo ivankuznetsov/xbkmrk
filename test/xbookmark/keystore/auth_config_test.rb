@@ -117,6 +117,51 @@ describe Xbookmark::Keystore::AuthConfig do
     end
   end
 
+  it "drops a 1password section that has no ref and warns about it" do
+    Dir.mktmpdir do |dir|
+      path = tmp_config_path(dir)
+      File.write(path, %([openrouter]\nbackend = "1password"\n))
+      warn_io = StringIO.new
+      cfg = described_class.new(path: path, warn_io: warn_io)
+
+      assert_nil cfg.lookup("openrouter"), "a ref-less 1password row must not load"
+      assert_match(/1password backend requires a ref/, warn_io.string)
+    end
+  end
+
+  it "warns instead of silently dropping a section with an unknown backend" do
+    Dir.mktmpdir do |dir|
+      path = tmp_config_path(dir)
+      File.write(path, %([openrouter]\nbackend = "1pasword"\n))
+      warn_io = StringIO.new
+      cfg = described_class.new(path: path, warn_io: warn_io)
+
+      assert_nil cfg.lookup("openrouter")
+      assert_match(/ignoring auth.toml section \[openrouter\]/, warn_io.string)
+      assert_match(/unknown backend/, warn_io.string)
+    end
+  end
+
+  it "drops a section whose name is not a valid provider key instead of bricking the file" do
+    Dir.mktmpdir do |dir|
+      path = tmp_config_path(dir)
+      # A quoted key with a space is legal TOML but cannot round-trip through a
+      # bare `[name]` header; loading must drop (and warn), not later rewrite an
+      # unparseable file.
+      File.write(path, %(["foo bar"]\nbackend = "keychain"\n))
+      warn_io = StringIO.new
+      cfg = described_class.new(path: path, warn_io: warn_io)
+
+      refute cfg.entries.key?("foo bar"), "an illegal section name must not load"
+      assert_match(/not a valid provider name/, warn_io.string)
+
+      # A subsequent write must still produce a parseable file.
+      cfg.bind_keychain("openrouter")
+      reloaded = described_class.new(path: path, warn_io: StringIO.new)
+      assert_equal "keychain", reloaded.lookup("openrouter")[:backend]
+    end
+  end
+
   it "wraps a malformed TOML file in an Xbookmark::Error" do
     Dir.mktmpdir do |dir|
       path = tmp_config_path(dir)

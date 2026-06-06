@@ -21,14 +21,22 @@ module Xbookmark
     class AuthConfig
       KNOWN_BACKENDS = %w[keychain 1password].freeze
 
+      # The charset a section name must satisfy to be a legal provider key —
+      # the same shape Provider.parse enforces. A name outside it (e.g. a
+      # quoted/dotted TOML key) cannot round-trip through serialize's bare
+      # `[#{name}]` header, so we reject it at load time.
+      PROVIDER_NAME_PATTERN = /\A[a-z0-9_-]+\z/
+      private_constant :PROVIDER_NAME_PATTERN
+
       attr_reader :path
 
       def self.default_path
         File.join(Xbookmark::Paths.default_config_dir, "auth.toml")
       end
 
-      def initialize(path: self.class.default_path)
+      def initialize(path: self.class.default_path, warn_io: $stderr)
         @path = path
+        @warn_io = warn_io
         @entries = load_entries
       end
 
@@ -125,17 +133,56 @@ module Xbookmark
           end
         entries = {}
         raw.each do |name, section|
-          next unless section.is_a?(Hash)
+          key = name.to_s.downcase
+          # We *warn* on every dropped section rather than skipping silently:
+          # update! re-reads then re-serialises only the survivors, so a
+          # hand-added or typo'd row would otherwise be deleted as a side effect
+          # of an unrelated `bind`/`rm`/`login`, with the user only finding out
+          # at resolve time via a confusing "No credential configured".
+          unless section.is_a?(Hash)
+            warn_dropped(name, "expected a [section] table")
+            next
+          end
+          unless key.match?(PROVIDER_NAME_PATTERN)
+            # A quoted/dotted TOML key (e.g. ["foo bar"] or [a.b]) is legal on
+            # disk but cannot round-trip through serialize's bare `[#{name}]`
+            # header — it would rewrite to an unparseable file and brick every
+            # subsequent auth command. Drop it loudly instead.
+            warn_dropped(name, "not a valid provider name (must match /\\A[a-z0-9_-]+\\z/)")
+            next
+          end
           backend = section["backend"].to_s
-          next if backend.empty?
+          if backend.empty?
+            warn_dropped(name, "missing a backend")
+            next
+          end
           # Drop sections with an unrecognized backend instead of round-tripping
           # them silently; only KNOWN_BACKENDS can be resolved at runtime.
-          next unless KNOWN_BACKENDS.include?(backend)
+          unless KNOWN_BACKENDS.include?(backend)
+            warn_dropped(name, "unknown backend #{backend.inspect}")
+            next
+          end
+          ref = section["ref"]
+          if backend == "1password" && (ref.nil? || ref.to_s.strip.empty?)
+            # Enforce the "ref required iff 1password" invariant at load: a
+            # ref-less 1password row would otherwise reach the Resolver and
+            # shell `op read` with no reference, surfacing a confusing `op`
+            # error rather than a clear malformed-config one.
+            warn_dropped(name, "1password backend requires a ref")
+            next
+          end
           entry = { backend: backend }
-          entry[:ref] = section["ref"].to_s if section["ref"]
-          entries[name.to_s.downcase] = entry
+          entry[:ref] = ref.to_s if ref
+          entries[key] = entry
         end
         entries
+      end
+
+      def warn_dropped(name, reason)
+        @warn_io&.puts(
+          "[xbookmark] ignoring auth.toml section [#{name}]: #{reason}. " \
+            "It will be removed on the next auth write."
+        )
       end
 
       def serialize(entries)
