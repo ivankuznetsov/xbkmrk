@@ -260,6 +260,23 @@ describe Xbookmark::CLI::Auth do
       assert_nil cfg.lookup("openrouter"), "a rejected ref must not be persisted"
     end
 
+    it "fails fast and does not persist when the op smoke check raises a SystemCallError" do
+      # A SystemCallError (e.g. the op binary missing mid-run, a broken pipe)
+      # is the fatal sub-branch of the smoke check, distinct from the
+      # Xbookmark::Error bad-ref path: it must also refuse to bind, surface the
+      # "Refusing to bind" message, and leave auth.toml untouched.
+      Xbookmark::Keystore::OnePassword.stubs(:available?).returns(true)
+      op = mock("op")
+      op.stubs(:read).raises(Errno::EPIPE, "op read")
+      Xbookmark::Keystore::OnePassword.stubs(:new).returns(op)
+
+      err = run_cli_expect_exit("bind", "openrouter", "op://Personal/Missing/cred")
+      assert_match(/Refusing to bind openrouter: op read failed/, err)
+
+      cfg = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
+      assert_nil cfg.lookup("openrouter"), "a ref whose smoke check errored must not be persisted"
+    end
+
     it "persists without warning when the op smoke check resolves the ref" do
       Xbookmark::Keystore::OnePassword.stubs(:available?).returns(true)
       op = mock("op")
@@ -387,6 +404,24 @@ describe Xbookmark::CLI::Auth do
       refute_match(/sk-legacy/, out)
     ensure
       ENV.delete("XBOOKMARK_X_API_KEY")
+    end
+
+    it "lists a hyphenated provider once when it is both configured and has its env var exported" do
+      # `foo-bar` routes through XBOOKMARK_FOO_BAR_KEY (hyphens collapse to
+      # underscores). A configured `foo-bar/keychain` row plus that exported env
+      # var must NOT also surface a phantom `foo_bar/env` row: the de-dup compares
+      # in the underscore form, so the env candidate is suppressed.
+      ENV.keys.grep(/\AXBOOKMARK_.+_KEY\z/).each { |k| ENV.delete(k) }
+      cfg = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
+      cfg.bind_keychain("foo-bar")
+      ENV["XBOOKMARK_FOO_BAR_KEY"] = "sk-leak"
+
+      out, _err = run_cli("list")
+      assert_match(/foo-bar\s+keychain/, out)
+      refute_match(/foo_bar\s+env/, out)
+      refute_match(/sk-leak/, out)
+    ensure
+      ENV.delete("XBOOKMARK_FOO_BAR_KEY")
     end
 
     it "prints 'No providers configured.' when nothing is set" do
@@ -519,6 +554,54 @@ describe Xbookmark::CLI::Auth do
       reloaded = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
       refute_nil reloaded.lookup("openrouter"),
         "routing must remain when the secret could not be deleted"
+    end
+  end
+
+  # `show` is the only command allowed to emit the plaintext key. Guard the
+  # rest: a regression that adds a stray `puts value` to login/bind/rm would
+  # pass every other test in this file, so assert the secret never reaches
+  # stdout or stderr for each of them.
+  describe "secrecy across non-show commands" do
+    it "login never echoes the entered key to stdout or stderr" do
+      stub_platform_linux
+      keychain_double = mock("kc")
+      keychain_double.expects(:set).with("openrouter", "sk-secret-value").returns(true)
+      keychain_double.stubs(:name).returns("libsecret")
+      Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
+      Xbookmark::Keystore::Libsecret.stubs(:new).returns(keychain_double)
+
+      stdin = StringIO.new("sk-secret-value\n")
+      def stdin.tty?; false; end
+      out, err = run_cli("login", "openrouter", stdin: stdin)
+      refute_match(/sk-secret-value/, out, "login must not print the secret to stdout")
+      refute_match(/sk-secret-value/, err, "login must not print the secret to stderr")
+    end
+
+    it "bind never echoes the smoke-checked secret to stdout or stderr" do
+      Xbookmark::Keystore::OnePassword.stubs(:available?).returns(true)
+      op = mock("op")
+      op.stubs(:read).returns("sk-op-secret")
+      Xbookmark::Keystore::OnePassword.stubs(:new).returns(op)
+
+      out, err = run_cli("bind", "openrouter", "op://Personal/OR/cred")
+      refute_match(/sk-op-secret/, out, "bind must not print the resolved secret to stdout")
+      refute_match(/sk-op-secret/, err, "bind must not print the resolved secret to stderr")
+    end
+
+    it "rm never fetches or prints the keychain secret value" do
+      stub_platform_linux
+      keychain_double = mock("kc")
+      # rm deletes by account; it must never read the value, let alone print it.
+      keychain_double.expects(:get).never
+      keychain_double.expects(:delete).with("openrouter").returns(true)
+      Xbookmark::Keystore::Libsecret.stubs(:available?).returns(true)
+      Xbookmark::Keystore::Libsecret.stubs(:new).returns(keychain_double)
+
+      cfg = Xbookmark::Keystore::AuthConfig.new(path: @auth_toml)
+      cfg.bind_keychain("openrouter")
+
+      out, err = run_cli("rm", "openrouter")
+      refute_match(/sk-/, out + err, "rm must not surface any secret-looking value")
     end
   end
 end

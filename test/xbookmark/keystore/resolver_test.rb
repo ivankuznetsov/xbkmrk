@@ -92,6 +92,21 @@ describe Xbookmark::Keystore::Resolver do
     end
   end
 
+  it "raises 'backend returned no value' when 1password resolves to a blank secret" do
+    # Drives the cross-layer invariant from the resolve side: even if the op
+    # backend slipped a blank value past its own empty-output guard, Resolver's
+    # `non_empty?` (which strips before checking) must still reject it rather
+    # than handing back a whitespace-only credential.
+    Dir.mktmpdir do |dir|
+      cfg = build_config(dir) { |c| c.bind_one_password("openrouter", "op://Personal/OR/cred") }
+      op = FakeOnePassword.new("op://Personal/OR/cred" => "   ")
+      resolver = described_class.new(config: cfg, env: {}, one_password: op)
+
+      err = assert_raises(Xbookmark::Error) { resolver.resolve("openrouter") }
+      assert_match(/backend returned no value/, err.message)
+    end
+  end
+
   it "keychain routing reads the platform backend by account name" do
     Dir.mktmpdir do |dir|
       cfg = build_config(dir) { |c| c.bind_keychain("openrouter") }

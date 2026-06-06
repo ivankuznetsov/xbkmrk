@@ -55,7 +55,7 @@ describe "auth end-to-end via bin/xbookmark" do
     store_dir = File.join(@tmpdir, "kc-store")
     FileUtils.mkdir_p(store_dir)
 
-    if linux?
+    backend_name = if linux?
       write_shim("secret-tool", <<~SH)
         cmd="$1"; shift
         printf "%s %s\\n" "$cmd" "$*" >> "#{@transcript}"
@@ -104,6 +104,12 @@ describe "auth end-to-end via bin/xbookmark" do
       SH
       "keychain"
     end
+
+    # Fail loudly and by name on an unsupported host rather than returning nil,
+    # which would interpolate into the caller's `/Stored ... in ./` matcher and
+    # fail cryptically instead of stating the real cause.
+    flunk("no supported keychain backend for #{RbConfig::CONFIG["host_os"]}") unless backend_name
+    backend_name
   end
 
   def run_xbookmark(*argv, stdin: nil, env: {})
@@ -167,6 +173,25 @@ describe "auth end-to-end via bin/xbookmark" do
     assert_equal "sk-op-value", out2.strip
 
     assert_match(%r{read .*op://CI Test/xbookmark-fixture/value}, File.read(@transcript))
+  end
+
+  it "auth bind refuses a ref whose op read returns an empty secret" do
+    # The op shim exits 0 but prints nothing, simulating a ref that resolves to
+    # an empty field. The real OnePassword#read rejects blank output, so the
+    # bind smoke-check must refuse and never persist the binding — the cross-
+    # layer invariant that an empty secret cannot pass `bind`.
+    write_shim("op", <<~SH)
+      cmd="$1"; shift
+      printf "%s %s\\n" "$cmd" "$*" >> "#{@transcript}"
+      if [ "$cmd" = "read" ]; then printf ""; fi
+    SH
+
+    out, err, status = run_xbookmark("auth", "bind", @provider, "op://CI Test/empty/value")
+    refute status.success?, "bind must fail when the ref resolves to an empty secret: #{out}"
+    assert_match(/Refusing to bind/, err)
+
+    cfg_path = File.join(@home, ".config", "xbookmark", "auth.toml")
+    refute File.file?(cfg_path), "an empty-resolving ref must not be persisted"
   end
 
   it "CI=true short-circuits to env without invoking any backend shim" do
