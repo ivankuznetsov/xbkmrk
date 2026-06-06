@@ -206,6 +206,21 @@ describe Xbookmark::Keystore::Libsecret do
 
     assert_equal false, backend.delete("openrouter")
   end
+
+  it "raises when secret-tool clear is killed by a signal (nil exit status)" do
+    # A signal-killed clear has no exit status and usually empty stderr; without
+    # the guard it would masquerade as a successful delete and let `auth rm`
+    # drop the routing while the secret may still be in the keyring.
+    status = process_status(success: false, exitstatus: nil)
+    Open3.expects(:capture3).with(
+      "secret-tool", "clear",
+      "service", "xbookmark",
+      "account", "openrouter"
+    ).returns(["", "", status])
+
+    error = assert_raises(Xbookmark::Error) { backend.delete("openrouter") }
+    assert_match(/abnormally/, error.message)
+  end
 end
 
 describe Xbookmark::Keystore::Keychain do
@@ -263,6 +278,30 @@ describe Xbookmark::Keystore::Keychain do
     ).returns(["", "could not be found", status])
 
     assert_equal true, backend.delete("openrouter")
+  end
+
+  it "raises when delete-generic-password is killed by a signal (nil exit status)" do
+    status = process_status(success: false, exitstatus: nil)
+    Open3.expects(:capture3).with(
+      "security", "delete-generic-password",
+      "-s", "xbookmark", "-a", "openrouter"
+    ).returns(["", "", status])
+
+    error = assert_raises(Xbookmark::Error) { backend.delete("openrouter") }
+    assert_match(/abnormally/, error.message)
+  end
+
+  it "reports a failed delete on a generic non-zero, non-44 exit (e.g. locked keychain)" do
+    # exit 51 (e.g. a locked keychain) is neither success nor errSecItemNotFound:
+    # report not-deleted so `auth rm` keeps the auth.toml routing rather than
+    # orphaning a secret that is still present.
+    status = process_status(success: false, exitstatus: 51)
+    Open3.expects(:capture3).with(
+      "security", "delete-generic-password",
+      "-s", "xbookmark", "-a", "openrouter"
+    ).returns(["", "The user interaction is not allowed.", status])
+
+    assert_equal false, backend.delete("openrouter")
   end
 
   it "adds, deletes, and lists keychain entries" do

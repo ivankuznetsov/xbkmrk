@@ -75,6 +75,15 @@ module Xbookmark
           "account", account.to_s
         )
         return true if status.success?
+        # A signal-killed `secret-tool clear` has no exit status (exitstatus is
+        # nil) and usually an empty stderr; that is never a clean "already
+        # absent", so surface it (mirroring `get` and Keychain#delete) rather
+        # than reporting a successful delete and letting `auth rm` drop the
+        # auth.toml routing while the secret may still be in the keyring.
+        if status.exitstatus.nil?
+          raise Xbookmark::Error,
+            "secret-tool clear terminated abnormally (killed by a signal)"
+        end
         # `secret-tool clear` can exit non-zero with no stderr when there is no
         # matching item to clear (already absent). Treat that like Keychain's
         # exit-44 tolerance so `auth rm` can clear stale auth.toml routing

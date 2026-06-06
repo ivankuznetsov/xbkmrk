@@ -80,7 +80,9 @@ module Xbookmark
       def list_accounts
         # `security` cannot enumerate all items for a service in a stable
         # parseable form, so we probe the known account list and report
-        # which ones exist.
+        # which ones exist. NOTE: this only covers KNOWN_KEYS (the legacy X
+        # OAuth accounts); it is blind to provider rows added via `auth login`
+        # (e.g. `openrouter`), so a caller must not assume it lists those.
         Xbookmark::Keystore::KNOWN_KEYS.select { |a| !get(a).nil? }
       end
     end

@@ -44,7 +44,10 @@ module Xbookmark
       # Force every instance through `parse`, which is the only place the
       # charset/empty/downcase invariant is enforced. Existing callers already
       # use `parse`, so this closes the back door without breaking anyone.
-      private_class_method :new
+      # `Struct.[]` is a second public constructor that aliases `new`, so it
+      # must be privatized too — otherwise `Provider["UNVALIDATED"]` yields an
+      # unvalidated, unfrozen instance that `Resolver#resolve` would trust.
+      private_class_method :new, :[]
     end
 
     # The single source of truth for a legal provider-name charset. Defined on
