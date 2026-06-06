@@ -112,7 +112,12 @@ describe "auth end-to-end via bin/xbookmark" do
       "HOME" => @home,
       "XDG_CONFIG_HOME" => File.join(@home, ".config"),
       "CI" => nil,
-      "XBOOKMARK_KEYS_FROM_ENV" => nil
+      "XBOOKMARK_KEYS_FROM_ENV" => nil,
+      # The resolver's keychain probe gates libsecret on a D-Bus session. The
+      # `secret-tool` shim ignores D-Bus, but the gate only checks the env var
+      # is present, so set it explicitly — a headless CI runner may not export
+      # one, which would otherwise make `auth show` refuse the shim.
+      "DBUS_SESSION_BUS_ADDRESS" => "unix:path=/run/user/1000/bus"
     }.merge(env)
     ruby = RbConfig.ruby
     Open3.capture3(cmd_env, ruby, "-I", File.join(ROOT, "lib"),
@@ -121,8 +126,11 @@ describe "auth end-to-end via bin/xbookmark" do
   end
 
   it "auth login round-trips through the platform keychain shim" do
+    # No conditional skip: the keychain round-trip is the primary acceptance
+    # scenario, so on a host without a supported backend this test must *fail*
+    # (install_keychain_shim returns nil and the assertions below break) rather
+    # than silently no-cover it. CI runs on Linux/macOS where a shim installs.
     backend_name = install_keychain_shim
-    skip "auth login is Linux/macOS only" unless backend_name
 
     out, err, status = run_xbookmark("auth", "login", @provider, stdin: "sk-secret-value\n")
     assert status.success?, "CLI exited non-zero: #{err}"

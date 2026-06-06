@@ -218,10 +218,14 @@ Routing for each provider lives in `~/.config/xbookmark/auth.toml`
 (mode 0600, no secret values); the actual key lives in 1Password, the
 host keychain, or the environment.
 
-The `auth show <provider>` diagnostic resolves a provider's key, trying in
-order: CI env shortcut, `auth.toml` routing, then `XBOOKMARK_<PROVIDER>_KEY`
-from the environment. (Today `auth show` is the command that exercises this
-resolver; use it to confirm a binding works.)
+The `auth show <provider>` diagnostic resolves a provider's key. In CI mode
+(`CI=true` or `XBOOKMARK_KEYS_FROM_ENV=1`) it reads `XBOOKMARK_<PROVIDER>_KEY`
+straight from the environment and stops there — this is a mutually-exclusive
+short-circuit that skips `auth.toml` routing entirely, not a first step that
+falls through to it. Outside CI mode it tries `auth.toml` routing first, then
+falls back to `XBOOKMARK_<PROVIDER>_KEY` from the environment. (Today
+`auth show` is the command that exercises this resolver; use it to confirm a
+binding works.)
 
 > ⚠️ `auth show` prints the resolved secret in plaintext to stdout — it is the
 > one command that emits the key itself. Use it for ad-hoc checks or to feed a
@@ -252,8 +256,9 @@ xbookmark auth login openrouter
 
 **CI / headless**
 
-Set `CI=true` (most CI runners already do) or `XBOOKMARK_KEYS_FROM_ENV=1`,
-then export the canonical env vars:
+Set `CI=true` — it must be exactly the string `true` (`CI=1` is not enough),
+which is what GitHub Actions, GitLab CI, CircleCI, and Travis already export —
+or set `XBOOKMARK_KEYS_FROM_ENV=1`, then export the canonical env vars:
 
 ```bash
 export CI=true

@@ -5,14 +5,12 @@ module Xbookmark
     # Value object mapping a provider name (e.g. "openrouter", "x") to its
     # canonical env-var form and keychain account.
     Provider = Struct.new(:name) do
-      NAME_PATTERN = /\A[a-z0-9_-]+\z/
-
       def self.parse(arg)
         raw = arg.to_s.strip
         raise Xbookmark::Error, "provider name cannot be empty" if raw.empty?
 
         normalized = raw.downcase
-        unless normalized.match?(NAME_PATTERN)
+        unless normalized.match?(self::NAME_PATTERN)
           raise Xbookmark::Error,
             "invalid provider name #{arg.inspect}: must match /\\A[a-z0-9_-]+\\z/"
         end
@@ -48,5 +46,12 @@ module Xbookmark
       # use `parse`, so this closes the back door without breaking anyone.
       private_class_method :new
     end
+
+    # The single source of truth for a legal provider-name charset. Defined on
+    # the Provider class itself (not the enclosing Keystore scope, where a
+    # constant inside the Struct.new block would otherwise land) so AuthConfig
+    # and any other caller can reference Provider::NAME_PATTERN without
+    # duplicating the regex; `parse` reaches it via `self::NAME_PATTERN`.
+    Provider::NAME_PATTERN = /\A[a-z0-9_-]+\z/
   end
 end

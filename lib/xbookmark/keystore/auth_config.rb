@@ -21,13 +21,6 @@ module Xbookmark
     class AuthConfig
       KNOWN_BACKENDS = %w[keychain 1password].freeze
 
-      # The charset a section name must satisfy to be a legal provider key —
-      # the same shape Provider.parse enforces. A name outside it (e.g. a
-      # quoted/dotted TOML key) cannot round-trip through serialize's bare
-      # `[#{name}]` header, so we reject it at load time.
-      PROVIDER_NAME_PATTERN = /\A[a-z0-9_-]+\z/
-      private_constant :PROVIDER_NAME_PATTERN
-
       attr_reader :path
 
       def self.default_path
@@ -143,7 +136,11 @@ module Xbookmark
             warn_dropped(name, "expected a [section] table")
             next
           end
-          unless key.match?(PROVIDER_NAME_PATTERN)
+          # Reuse Provider's single source of truth for the legal-name charset
+          # (the same shape Provider.parse enforces) so the two cannot drift. A
+          # name outside it (e.g. a quoted/dotted TOML key) cannot round-trip
+          # through serialize's bare `[#{name}]` header, so we reject it here.
+          unless key.match?(Provider::NAME_PATTERN)
             # A quoted/dotted TOML key (e.g. ["foo bar"] or [a.b]) is legal on
             # disk but cannot round-trip through serialize's bare `[#{name}]`
             # header — it would rewrite to an unparseable file and brick every
