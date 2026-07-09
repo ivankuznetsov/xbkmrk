@@ -96,7 +96,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: xbookmark-x86_64-linux
       - name: Install FPM
@@ -123,7 +123,7 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
       - name: Aggregate SHA256SUMS
@@ -170,7 +170,7 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: xbookmark-arm64-darwin
           path: tap-binary
@@ -203,7 +203,7 @@ jobs:
     container: archlinux:latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: xbookmark-x86_64-linux
           path: aur-binary
@@ -235,7 +235,7 @@ jobs:
     needs: draft-release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: xbookmark-deb
       - name: apt install local .deb
@@ -290,7 +290,7 @@ jobs:
           repository: ivankuznetsov/homebrew-tap
           ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
           path: tap
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: steps.publish_config.outputs.enabled == 'true'
         with:
           name: xbookmark-arm64-darwin
@@ -339,7 +339,7 @@ jobs:
           fi
       - uses: actions/checkout@v4
         if: steps.publish_config.outputs.enabled == 'true'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: steps.publish_config.outputs.enabled == 'true'
         with:
           name: xbookmark-x86_64-linux
