@@ -210,6 +210,71 @@ For compatibility with earlier local branches, `XBOOKMARK_VAULT`,
 `OBSIDIAN_VAULT_PATH`, and the `--vault` CLI option are still accepted as
 aliases. Prefer `XBOOKMARK_WIKI_PATH` and `--wiki` in new setups.
 
+### Secrets
+
+xbookmark stores third-party API keys (e.g. `openrouter`, `x`) outside the
+env file so they never land in a checked-in `.env` or in shell history.
+Routing for each provider lives in `~/.config/xbookmark/auth.toml`
+(mode 0600, no secret values); the actual key lives in 1Password, the
+host keychain, or the environment.
+
+The `auth show <provider>` diagnostic resolves a provider's key. In CI mode
+(`CI=true` or `XBOOKMARK_KEYS_FROM_ENV=1`) it reads `XBOOKMARK_<PROVIDER>_KEY`
+straight from the environment and stops there — this is a mutually-exclusive
+short-circuit that skips `auth.toml` routing entirely, not a first step that
+falls through to it. Outside CI mode it tries `auth.toml` routing first, then
+falls back to `XBOOKMARK_<PROVIDER>_KEY` from the environment. (Today
+`auth show` is the command that exercises this resolver; use it to confirm a
+binding works.)
+
+> ⚠️ `auth show` prints the resolved secret in plaintext to stdout — it is the
+> one command that emits the key itself. Use it for ad-hoc checks or to feed a
+> key into a process over stdin; never wire it into a logged build step, shell
+> history, or anything that persists its output.
+
+**Linux with 1Password CLI**
+
+```bash
+xbookmark auth bind openrouter op://Personal/OpenRouter/credential
+xbookmark auth bind x op://Personal/X/api_key
+xbookmark auth show openrouter   # resolves via `op read` (diagnostic)
+```
+
+**Linux vanilla (GNOME Keyring / KWallet / KeePassXC over libsecret)**
+
+```bash
+xbookmark auth login openrouter   # hidden prompt; never accepted on argv
+xbookmark auth show openrouter    # confirm it resolves
+```
+
+**macOS**
+
+```bash
+xbookmark auth login openrouter
+# Verify in Keychain Access.app: service "xbookmark", account "openrouter"
+```
+
+**CI / headless**
+
+Set `CI=true` — it must be exactly the string `true` (`CI=1` is not enough),
+which is what GitHub Actions, GitLab CI, CircleCI, and Travis already export —
+or set `XBOOKMARK_KEYS_FROM_ENV=1`, then export the canonical env vars:
+
+```bash
+export CI=true
+export XBOOKMARK_OPENROUTER_KEY=...
+export XBOOKMARK_X_KEY=...
+xbookmark auth show openrouter   # confirm the env shortcut resolves
+```
+
+Inspect or clean up configured providers:
+
+```bash
+xbookmark auth list           # never prints stored values
+xbookmark auth show openrouter # diagnostic; prints the resolved value
+xbookmark auth rm openrouter
+```
+
 ## Usage
 
 ### auth

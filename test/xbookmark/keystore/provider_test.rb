@@ -1,0 +1,59 @@
+# frozen_string_literal: true
+
+require "test_helper"
+require "xbookmark/keystore/provider"
+
+describe Xbookmark::Keystore::Provider do
+  it "round-trips a name into env_key and account" do
+    p = described_class.parse("openrouter")
+    assert_equal "openrouter", p.account
+    assert_equal "XBOOKMARK_OPENROUTER_KEY", p.env_key
+    assert_equal "XBOOKMARK_OPENROUTER_API_KEY", p.legacy_env_key
+  end
+
+  it "lowercases uppercase input" do
+    p = described_class.parse("X")
+    assert_equal "x", p.name
+    assert_equal "XBOOKMARK_X_KEY", p.env_key
+  end
+
+  it "accepts digits, hyphens, and underscores" do
+    p = described_class.parse("anthropic-2024_v1")
+    assert_equal "anthropic-2024_v1", p.name
+  end
+
+  it "translates hyphens to underscores in env_key so shells can set the var" do
+    p = described_class.parse("foo-bar")
+    assert_equal "XBOOKMARK_FOO_BAR_KEY", p.env_key
+    assert_equal "XBOOKMARK_FOO_BAR_API_KEY", p.legacy_env_key
+  end
+
+  it "rejects path traversal characters" do
+    assert_raises(Xbookmark::Error) { described_class.parse("../foo") }
+    assert_raises(Xbookmark::Error) { described_class.parse("a/b") }
+    assert_raises(Xbookmark::Error) { described_class.parse("a b") }
+    assert_raises(Xbookmark::Error) { described_class.parse("a.b") }
+  end
+
+  it "rejects empty input" do
+    assert_raises(Xbookmark::Error) { described_class.parse("") }
+    assert_raises(Xbookmark::Error) { described_class.parse("   ") }
+  end
+
+  it "to_s returns the provider name" do
+    assert_equal "openrouter", described_class.parse("openrouter").to_s
+  end
+
+  it "freezes parsed instances so the value object is immutable" do
+    assert described_class.parse("openrouter").frozen?
+  end
+
+  it "makes the raw constructor private so parse is the sole door" do
+    assert_raises(NoMethodError) { described_class.new("UNVALIDATED") }
+  end
+
+  it "names the anchored pattern in its rejection message" do
+    error = assert_raises(Xbookmark::Error) { described_class.parse("foo bar") }
+    assert_match(%r{\\A\[a-z0-9_-\]\+\\z}, error.message)
+  end
+end

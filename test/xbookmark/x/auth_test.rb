@@ -509,24 +509,23 @@ describe Xbookmark::X::Auth do
 
   it "receives a matching OAuth callback code from the local server" do
     config = fake_config(env_path: "/tmp/.env")
-    config.x_redirect_uri = "http://127.0.0.1:7799/callback"
+    config.x_redirect_uri = "http://127.0.0.1:#{unused_local_port}/callback"
     auth = described_class.new(config, opener: false, env_path: "/tmp/.env")
-    server = fake_callback_server("state" => "ok", "code" => "CODE")
-    WEBrick::HTTPServer.stubs(:new).returns(server)
 
+    request_callback_async(config.x_redirect_uri, "state=ok&code=CODE")
     assert_equal "CODE", auth.wait_for_callback(state: "ok", timeout: 5)
-    assert_equal 200, server.response.status
   end
 
   it "shuts down the callback server when the interrupt handler runs" do
     config = fake_config(env_path: "/tmp/.env")
+    config.x_redirect_uri = "http://127.0.0.1:#{unused_local_port}/callback"
     auth = described_class.new(config, opener: false, env_path: "/tmp/.env")
-    server = fake_callback_server("state" => "ok", "code" => "CODE")
-    WEBrick::HTTPServer.stubs(:new).returns(server)
     Signal.stubs(:trap).with("INT").yields.returns("old-handler")
     Signal.stubs(:trap).with("INT", "old-handler").returns("old-handler")
 
-    assert_includes capture_stderr { auth.wait_for_callback(state: "ok", timeout: 5) }, "auth login interrupted"
+    assert_includes capture_stderr {
+      assert_raises(Xbookmark::AuthError) { auth.wait_for_callback(state: "ok", timeout: 5) }
+    }, "auth login interrupted"
   end
 
   it "defaults to the keystore when no env file is loaded and resolves PATH lookups" do
@@ -571,67 +570,50 @@ describe Xbookmark::X::Auth do
 
   it "rejects mismatched state and missing callback code" do
     [
-      ["wrong-state", "state=bad&code=CODE", "State mismatch"],
-      ["missing-code", "state=ok", "Missing code"]
-    ].each do |_case_name, query, body|
+      ["wrong-state", "state=bad&code=CODE"],
+      ["missing-code", "state=ok"]
+    ].each do |_case_name, query|
       config = fake_config(env_path: "/tmp/.env")
-      config.x_redirect_uri = "http://127.0.0.1:7799/callback"
+      config.x_redirect_uri = "http://127.0.0.1:#{unused_local_port}/callback"
       auth = described_class.new(config, opener: false, env_path: "/tmp/.env")
-      server = fake_callback_server(Hash[URI.decode_www_form(query)])
-      WEBrick::HTTPServer.stubs(:new).returns(server)
 
+      request_callback_async(config.x_redirect_uri, query)
       error = assert_raises(Xbookmark::AuthError) { auth.wait_for_callback(state: "ok", timeout: 5) }
       assert_match(/no code/, error.message)
-      assert_includes server.response.body, body
     end
   end
 
   it "times out when the OAuth callback never arrives" do
     config = fake_config(env_path: "/tmp/.env")
-    config.x_redirect_uri = "http://127.0.0.1:7799/callback"
+    config.x_redirect_uri = "http://127.0.0.1:#{unused_local_port}/callback"
     auth = described_class.new(config, opener: false, env_path: "/tmp/.env")
-    server = fake_timeout_server
-    WEBrick::HTTPServer.stubs(:new).returns(server)
 
     error = assert_raises(Xbookmark::AuthError) { auth.wait_for_callback(state: "ok", timeout: 0.01) }
     assert_match(/timed out/, error.message)
   end
 
-  AuthFakeResponse = Struct.new(:status, :body, keyword_init: true)
-  AuthFakeRequest = Struct.new(:query, keyword_init: true)
-
-  def fake_callback_server(query)
-    Class.new do
-      attr_reader :response
-
-      define_method(:initialize) do |callback_query|
-        @query = callback_query
-      end
-
-      def mount_proc(_path, &block)
-        @block = block
-      end
-
-      def start
-        @response = AuthFakeResponse.new(status: 200, body: "")
-        @block.call(AuthFakeRequest.new(query: @query), @response)
-      end
-
-      def shutdown; end
-    end.new(query)
+  def unused_local_port
+    server = TCPServer.new("127.0.0.1", 0)
+    server.addr[1]
+  ensure
+    server&.close
   end
 
-  def fake_timeout_server
-    Class.new do
-      def mount_proc(_path, &_block); end
-
-      def start
-        sleep 0.01 until @shutdown
+  def request_callback_async(redirect_uri, query)
+    uri = URI(redirect_uri)
+    Thread.new do
+      deadline = Time.now + 2
+      begin
+        socket = TCPSocket.new(uri.host, uri.port)
+        socket.write("GET #{uri.path}?#{query} HTTP/1.1\r\nHost: #{uri.host}\r\nConnection: close\r\n\r\n")
+        socket.read
+      rescue Errno::ECONNREFUSED
+        raise if Time.now >= deadline
+        sleep 0.01
+        retry
+      ensure
+        socket&.close
       end
-
-      def shutdown
-        @shutdown = true
-      end
-    end.new
+    end
   end
 end

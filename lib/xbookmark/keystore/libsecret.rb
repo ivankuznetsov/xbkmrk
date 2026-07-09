@@ -26,14 +26,32 @@ module Xbookmark
       end
 
       def get(account)
-        out, _err, status = Open3.capture3(
+        out, err, status = Open3.capture3(
           "secret-tool", "lookup",
           "service", Xbookmark::Keystore::SERVICE,
           "account", account.to_s
         )
-        return nil unless status.success?
-        return nil if out.to_s.empty?
-        out
+        if status.success?
+          return nil if out.to_s.empty?
+          return out
+        end
+        # A signal-killed `secret-tool` has no exit status (exitstatus is nil);
+        # that is never a clean "not found", so surface it rather than masking
+        # it as an absent secret and prompting a destructive re-login overwrite.
+        if status.exitstatus.nil?
+          raise Xbookmark::Error,
+            "secret-tool lookup terminated abnormally (killed by a signal)"
+        end
+        # `secret-tool lookup` exits non-zero with no stderr when the item is
+        # simply absent (a genuine "not found"). A non-empty stderr means a
+        # transient failure — locked keyring, no D-Bus session — and collapsing
+        # that to nil would mislead the Resolver into reporting the credential
+        # as permanently missing and prompting a destructive overwrite. Surface
+        # it instead. ("Not found" is inferred from an empty stderr, not from a
+        # specific exit code — see wiki/gaps.md.)
+        raise Xbookmark::Error,
+          "secret-tool lookup failed: #{err.to_s.strip}" unless err.to_s.strip.empty?
+        nil
       end
 
       def set(account, value)
@@ -51,12 +69,28 @@ module Xbookmark
       end
 
       def delete(account)
-        _out, _err, status = Open3.capture3(
+        _out, err, status = Open3.capture3(
           "secret-tool", "clear",
           "service", Xbookmark::Keystore::SERVICE,
           "account", account.to_s
         )
-        status.success?
+        return true if status.success?
+        # A signal-killed `secret-tool clear` has no exit status (exitstatus is
+        # nil) and usually an empty stderr; that is never a clean "already
+        # absent", so surface it (mirroring `get` and Keychain#delete) rather
+        # than reporting a successful delete and letting `auth rm` drop the
+        # auth.toml routing while the secret may still be in the keyring.
+        if status.exitstatus.nil?
+          raise Xbookmark::Error,
+            "secret-tool clear terminated abnormally (killed by a signal)"
+        end
+        # `secret-tool clear` can exit non-zero with no stderr when there is no
+        # matching item to clear (already absent). Treat that like Keychain's
+        # exit-44 tolerance so `auth rm` can clear stale auth.toml routing
+        # instead of wedging on a missing secret — nothing can be orphaned when
+        # nothing exists. A non-empty stderr is a real failure; report it as
+        # not-deleted so the routing is kept.
+        err.to_s.strip.empty?
       end
 
       def list_accounts

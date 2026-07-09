@@ -336,3 +336,17 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** CHANGELOG.md, wiki/commands.md, wiki/log.md
 **Decision:** Re-enrichment sources from the note, not X. Only 157/1377 production notes still have a cached X payload, and many tweets (2021–2025) are deleted, so re-fetching would be lossy and rate-limited. `Enrich::NoteSource` reverses `BookmarkRenderer#body_for` to reconstruct the original tweet text + captions + transcripts; 1185/1220 payload-less notes carry real original text, the other 35 fall back to the (faithful) summary. `Orchestrator#enrich` gained a `vision:` override so reused captions feed the model as text (no fresh vision pass). `Pipeline#process_offline` skips download/transcribe/move and rewrites in place. `Sync::Reenricher` is resumable (skips current-schema notes) and resets concept evidence on a fresh full run so additive upserts don't double-count.
 **Source:** `lib/xbookmark/enrich/note_source.rb`, `lib/xbookmark/enrich/orchestrator.rb`, `lib/xbookmark/sync/{pipeline,reenricher}.rb`, `lib/xbookmark/state/store.rb`, `lib/xbookmark/cli{,/sync}.rb`, and their tests. Piloted on production data: concise titles + typed concepts.
+
+## [2026-07-09T11:15:00Z] provider secret routing rebase refresh
+
+**Action:** Refreshed wiki coverage while rebasing PR #46 onto current `main`, preserving newer taxonomy/source-outage knowledge and adding provider credential routing facts, including diagnostic `auth show`.
+**Pages updated:** wiki/architecture.md, wiki/api.md, wiki/commands.md, wiki/data-model.md, wiki/dependencies.md, wiki/active-areas.md, wiki/decisions.md, wiki/gaps.md, wiki/index.md, wiki/log.md
+**Decision:** Provider API-key values stay out of repo/env-file docs and route through 1Password, the platform keychain, or env-only CI mode; `auth.toml` records routing metadata only. `auth show` is documented as a sensitive diagnostic command because it prints the resolved credential.
+**Source:** `lib/xbookmark/keystore/{provider,auth_config,resolver,one_password,keychain,libsecret}.rb`, `lib/xbookmark/cli/auth.rb`, README Secrets section, shared provider-name validation, exact CI resolver behavior, and PR #46 rebase conflict resolution.
+
+## [2026-07-09T11:25:00Z] OAuth callback dependency hardening
+
+**Action:** Removed the WEBrick runtime dependency while fixing the rebased PR's bundler-audit failures.
+**Pages updated:** wiki/api.md, wiki/dependencies.md, wiki/log.md
+**Decision:** Keep the OAuth callback surface as a one-request loopback listener implemented with Ruby's standard `socket` library, which is sufficient for PKCE callback handling and avoids carrying an unpatched WEBrick advisory.
+**Source:** `lib/xbookmark/x/auth.rb`, `test/xbookmark/x/auth_test.rb`, `xbookmark.gemspec`, `Gemfile.lock`, and `bundler-audit check --update`.

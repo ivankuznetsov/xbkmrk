@@ -4,7 +4,7 @@ require "securerandom"
 require "digest"
 require "base64"
 require "uri"
-require "webrick"
+require "socket"
 require "faraday"
 require "faraday/retry"
 require "json"
@@ -114,38 +114,26 @@ module Xbookmark
         port = URI(@config.x_redirect_uri).port || LOCAL_PORT
         host = URI(@config.x_redirect_uri).host || "127.0.0.1"
         captured = nil
-        server = WEBrick::HTTPServer.new(
-          Port: port,
-          BindAddress: host,
-          Logger: WEBrick::Log.new(File::NULL),
-          AccessLog: []
-        )
-        server.mount_proc "/callback" do |req, res|
-          q = req.query
-          if q["state"] != state
-            res.status = 400
-            res.body = "State mismatch — refusing."
-          elsif q["code"]
-            captured = q["code"]
-            res.body = "Authorization complete. You can close this tab."
-          else
-            res.status = 400
-            res.body = "Missing code parameter."
-          end
-          server.shutdown
-        end
+        server = TCPServer.new(host, port)
 
         prev_int_handler = Signal.trap("INT") do
           warn "[xbookmark] auth login interrupted; shutting down callback server."
-          server.shutdown
+          close_callback_server(server)
         end
 
         timed_out = false
         begin
-          server_thread = Thread.new { server.start }
+          server_thread = Thread.new do
+            captured = serve_callback_once(server, state)
+          rescue IOError, SystemCallError
+            nil
+          ensure
+            close_callback_server(server)
+          end
+
           if server_thread.join(timeout).nil?
             timed_out = true
-            server.shutdown
+            close_callback_server(server)
             server_thread.join(5)
           end
         ensure
@@ -155,6 +143,63 @@ module Xbookmark
         raise AuthError, "OAuth callback timed out after #{timeout}s — re-run `xbookmark auth login`." if timed_out
         raise AuthError, "OAuth flow returned no code." unless captured
         captured
+      end
+
+      def serve_callback_once(server, expected_state)
+        client = server.accept
+        request_line = client.gets.to_s
+        drain_request_headers(client)
+        status, body, query = callback_response(request_line, expected_state)
+        client.write(http_response(status, body))
+        status == 200 ? query["code"] : nil
+      ensure
+        client&.close
+      end
+
+      def callback_response(request_line, expected_state)
+        _method, target, = request_line.split(" ", 3)
+        uri = URI(target.to_s)
+        query = URI.decode_www_form(uri.query.to_s).to_h
+
+        if uri.path != "/callback"
+          [404, "Not found.", query]
+        elsif query["state"] != expected_state
+          [400, "State mismatch — refusing.", query]
+        elsif query["code"].to_s.empty?
+          [400, "Missing code parameter.", query]
+        else
+          [200, "Authorization complete. You can close this tab.", query]
+        end
+      rescue URI::InvalidURIError
+        [400, "Invalid callback request.", {}]
+      end
+
+      def drain_request_headers(client)
+        while (line = client.gets)
+          break if line == "\r\n" || line == "\n"
+        end
+      end
+
+      def http_response(status, body)
+        reason = {
+          200 => "OK",
+          400 => "Bad Request",
+          404 => "Not Found"
+        }.fetch(status)
+        [
+          "HTTP/1.1 #{status} #{reason}",
+          "Content-Type: text/plain; charset=utf-8",
+          "Content-Length: #{body.bytesize}",
+          "Connection: close",
+          "",
+          body
+        ].join("\r\n")
+      end
+
+      def close_callback_server(server)
+        server.close unless server.closed?
+      rescue IOError
+        nil
       end
 
       def exchange_code_for_token(code:, verifier:)

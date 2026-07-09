@@ -1,5 +1,10 @@
 # frozen_string_literal: true
 
+# Pull in the top-level error hierarchy so requiring this file (or anything
+# under keystore/) standalone defines Xbookmark::Error, which the backends
+# raise. Without it, a caller that loads only the keystore would hit a
+# NameError the first time a backend reported a failure.
+require_relative "../xbookmark"
 require_relative "paths"
 require_relative "keystore/libsecret"
 require_relative "keystore/keychain"
