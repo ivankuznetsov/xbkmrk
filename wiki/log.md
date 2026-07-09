@@ -343,3 +343,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** wiki/architecture.md, wiki/api.md, wiki/commands.md, wiki/data-model.md, wiki/dependencies.md, wiki/active-areas.md, wiki/decisions.md, wiki/gaps.md, wiki/index.md, wiki/log.md
 **Decision:** Provider API-key values stay out of repo/env-file docs and route through 1Password, the platform keychain, or env-only CI mode; `auth.toml` records routing metadata only. `auth show` is documented as a sensitive diagnostic command because it prints the resolved credential.
 **Source:** `lib/xbookmark/keystore/{provider,auth_config,resolver,one_password,keychain,libsecret}.rb`, `lib/xbookmark/cli/auth.rb`, README Secrets section, shared provider-name validation, exact CI resolver behavior, and PR #46 rebase conflict resolution.
+
+## [2026-07-09T11:25:00Z] OAuth callback dependency hardening
+
+**Action:** Removed the WEBrick runtime dependency while fixing the rebased PR's bundler-audit failures.
+**Pages updated:** wiki/api.md, wiki/dependencies.md, wiki/log.md
+**Decision:** Keep the OAuth callback surface as a one-request loopback listener implemented with Ruby's standard `socket` library, which is sufficient for PKCE callback handling and avoids carrying an unpatched WEBrick advisory.
+**Source:** `lib/xbookmark/x/auth.rb`, `test/xbookmark/x/auth_test.rb`, `xbookmark.gemspec`, `Gemfile.lock`, and `bundler-audit check --update`.

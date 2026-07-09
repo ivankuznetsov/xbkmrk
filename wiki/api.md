@@ -17,7 +17,7 @@ API facts are taken from the current branch and its README.
 
 There is no persistent HTTP server or application route table.
 
-During `auth login`, `Xbookmark::X::Auth` starts a temporary WEBrick loopback server and mounts only `/callback`. The callback accepts the OAuth authorization code, validates the `state` parameter, and then shuts the server down.
+During `auth login`, `Xbookmark::X::Auth` starts a temporary `TCPServer` loopback listener that handles one `/callback` request. The callback accepts the OAuth authorization code, validates the `state` parameter, writes a minimal plaintext HTTP response, and then shuts the listener down.
 
 ## X OAuth Surface
 

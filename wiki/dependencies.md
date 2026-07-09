@@ -19,7 +19,7 @@ The project contains:
   - `dotenv` for env-file loading.
   - `sqlite3` for local state.
   - `faraday` and `faraday-retry` for X API and link fetching.
-  - `oauth2` and `webrick` for OAuth 2.0 PKCE login.
+  - `oauth2` for OAuth 2.0 PKCE token exchange; the temporary local callback listener uses Ruby's standard `socket` library instead of WEBrick.
   - `nokogiri` for external link text extraction.
   - `down` for media downloads.
   - `json-schema` for validating Codex JSON output.

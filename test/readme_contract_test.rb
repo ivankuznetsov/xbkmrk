@@ -33,7 +33,7 @@ describe "README setup contract" do
   end
 
   it "keeps the wiki command contract aligned with implemented auth commands" do
-    assert_includes commands_wiki, "auth login/status/refresh"
+    assert_includes commands_wiki, "auth login/bind/list/show/rm/status/refresh"
     assert_includes commands_wiki, "`auth refresh` loads config"
 
     deferred_section = commands_wiki.split("## Deferred Public Surface", 2).last
