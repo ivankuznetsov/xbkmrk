@@ -3,11 +3,11 @@ title: Dependencies
 type: dependencies
 source: git ls-files; Gemfile; xbookmark.gemspec; README.md
 created: 2026-05-14
-updated: 2026-05-25
+updated: 2026-08-16
 tags: [dependencies]
 ---
 
-**TLDR**: `xbookmark` is a Ruby gem-style CLI with Ruby gems for CLI/config/state/HTTP and external tools for Codex, QMD, Whisper, and native schedulers.
+**TLDR**: `xbookmark` uses Ruby gems for CLI/config/state/HTTP, OpenRouter for enrichment, and optional QMD/Whisper/native scheduler tools. Local Codex is not required.
 
 ## Ruby Dependencies
 
@@ -22,7 +22,7 @@ The project contains:
   - `oauth2` and `webrick` for OAuth 2.0 PKCE login.
   - `nokogiri` for external link text extraction.
   - `down` for media downloads.
-  - `json-schema` for validating Codex JSON output.
+  - `json-schema` for validating OpenRouter structured output.
   - `base64` and `ostruct`.
 - Required Ruby version in the gemspec is `>= 3.1`.
 
@@ -30,9 +30,6 @@ The project contains:
 
 The runtime shells out to external tools:
 
-- `codex` for LLM enrichment via `codex exec --json`.
-  - Bookmark-note enrichment always uses Codex. Separate author page summaries are opt-in with `XBOOKMARK_AUX_SUMMARIES=true` because they add extra Codex calls during backfill.
-  - Setup/install cleanup edits `~/.codex/config.toml` or `$CODEX_HOME/config.toml` only to remove stale invalid top-level `service_tier` values that can break scheduled runs; valid speed modes are preserved.
 - `qmd` for search collection registration, indexing, and querying.
 - A whisper backend, detected from `WHISPER_BIN` or PATH candidates `whisper-cli`, `whisper-cpp`, `whisper`, and `faster-whisper`.
   - For whisper.cpp binaries, model aliases such as `base.en` resolve to `ggml-base.en.bin` under `WHISPER_MODEL_DIR`, the source checkout's `models/` directory next to the binary, or `./models`.
@@ -43,6 +40,8 @@ The runtime shells out to external tools:
 ## External Services
 
 - X API v2 for bookmarks and tweet details.
+- OpenRouter chat completions for structured enrichment. Text-only prompts use DeepSeek V4 Flash Latest and image-bearing prompts use Qwen 3.8 27B.
+- An existing Birdclaw SQLite archive can replace historical X collection; it is opened read-only.
 - Local OAuth callback server on loopback for PKCE login.
 - Optional HTTP fetching of public external article links found in bookmarks, guarded by URL/IP safety checks.
 

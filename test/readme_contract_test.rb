@@ -54,9 +54,19 @@ describe "README setup contract" do
     refute_includes env_example, "--port"
   end
 
-  it "does not document a forced codex service tier" do
+  it "documents OpenRouter routing without a local Codex runtime requirement" do
+    assert_includes readme, "~deepseek/deepseek-v4-flash-latest"
+    assert_includes readme, "qwen/qwen3.8-27b"
+    assert_includes readme, "No local Codex process"
+    refute_includes readme, "codex login"
     refute_includes readme, 'service_tier = "flex"'
     refute_includes readme, 'service_tier = "fast"'
+  end
+
+  it "documents update-only import from existing extracted bookmarks" do
+    assert_includes readme, "bin/xbookmark import-birdclaw"
+    assert_includes readme, "never performs a historical X collection"
+    assert_includes commands_wiki, "xbookmark import-birdclaw"
   end
 
   it "documents scheduled source outages as degraded successful runs" do

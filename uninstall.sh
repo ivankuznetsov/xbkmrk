@@ -2,7 +2,7 @@
 # xbookmark uninstaller — POSIX sh sibling to install.sh.
 #
 # Usage:
-#   curl -fsSL https://github.com/ivankuznetsov/xbookmark/raw/main/uninstall.sh | sh
+#   curl -fsSL https://github.com/ivankuznetsov/xbkmrk/raw/main/uninstall.sh | sh
 #
 # Behavior:
 #   1. If `xbookmark` is on PATH, run `xbookmark uninstall --purge --yes`

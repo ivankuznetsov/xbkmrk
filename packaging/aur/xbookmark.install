@@ -3,7 +3,7 @@ post_install() {
 xbookmark is installed.  Run:
   xbookmark
 to launch the interactive setup wizard.  See:
-  https://github.com/ivankuznetsov/xbookmark/blob/main/README.md
+  https://github.com/ivankuznetsov/xbkmrk/blob/main/README.md
 for the install + uninstall one-liners and full configuration details.
 MSG
 }

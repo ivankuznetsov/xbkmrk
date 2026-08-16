@@ -36,7 +36,7 @@ fpm \
   --architecture amd64 \
   --maintainer "Ivan Kuznetsov <ivan@ikuznetsov.com>" \
   --description "Sync X (Twitter) bookmarks into a local Obsidian-ready bookmark wiki." \
-  --url "https://github.com/ivankuznetsov/xbookmark" \
+  --url "https://github.com/ivankuznetsov/xbkmrk" \
   --license "MIT" \
   --depends "ffmpeg" \
   --after-install "$(dirname "$0")/postinst" \

@@ -8,7 +8,6 @@ require_relative "../keystore"
 require_relative "../keystore/importer"
 require_relative "../scheduler/installer"
 require_relative "../config"
-require_relative "../codex_config"
 
 module Xbookmark
   class CLI
@@ -17,8 +16,9 @@ module Xbookmark
       # Mirrors `Config::REQUIRED_KEYS` for the truly required slots and
       # extends with the optional-but-recommended ones.
       PROMPTS = [
-        ["X_CLIENT_ID",     "X API client ID",     true,  false],
-        ["X_USER_ID",       "X numeric user ID",   true,  false],
+        ["OPENROUTER_API_KEY", "OpenRouter API key", true, true],
+        ["X_CLIENT_ID",     "X API client ID (optional)",     false, false],
+        ["X_USER_ID",       "X numeric user ID (optional)",   false, false],
         ["X_CLIENT_SECRET", "X API client secret", false, true],
         ["X_REDIRECT_URI",  "OAuth redirect URI",  false, false]
       ].freeze
@@ -50,7 +50,6 @@ module Xbookmark
 
         prompt_for_missing_keys
 
-        ensure_codex_service_tier
         install_scheduler
 
         say ""
@@ -72,13 +71,13 @@ module Xbookmark
       end
 
       def self.configured?(keystore: Xbookmark::Keystore.default)
-        Xbookmark::Config::REQUIRED_KEYS.all? { |k| !keystore.get(k).to_s.empty? }
+        Xbookmark::Config::ENRICHMENT_KEYS.all? { |k| !keystore.get(k).to_s.empty? }
       end
 
       def self.env_file_configured?
         env = ENV.to_h.dup
         Xbookmark::Config.load_env_files!(cwd: Dir.pwd, env: env)
-        Xbookmark::Config::REQUIRED_KEYS.all? { |k| env[k] && !env[k].to_s.strip.empty? }
+        Xbookmark::Config::ENRICHMENT_KEYS.all? { |k| env[k] && !env[k].to_s.strip.empty? }
       rescue StandardError
         false
       end
@@ -134,6 +133,11 @@ module Xbookmark
 
       def install_scheduler
         say ""
+        unless x_sync_configured?
+          say "  X credentials not configured; scheduler not installed (Birdclaw-only mode)"
+          return
+        end
+
         installer = @scheduler || begin
           config = Xbookmark::Config.load
           Xbookmark::Scheduler::Installer.new(config: config)
@@ -144,13 +148,8 @@ module Xbookmark
         say "  scheduler install failed: #{e.message}"
       end
 
-      def ensure_codex_service_tier
-        say ""
-        changed = Xbookmark::CodexConfig.new.remove_service_tier_override!
-        status = changed ? "removed stale override" : "unchanged"
-        say "  codex service_tier: #{status}"
-      rescue StandardError => e
-        say "  codex service_tier setup failed: #{e.message}"
+      def x_sync_configured?
+        Xbookmark::Config::REQUIRED_KEYS.all? { |key| !@keystore.get(key).to_s.strip.empty? }
       end
 
       def prompt(label, secret: false)

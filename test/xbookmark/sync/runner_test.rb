@@ -103,6 +103,10 @@ describe Xbookmark::Sync::Runner do
       x_client_id: "c", x_client_secret: nil, x_redirect_uri: "x",
       x_user_id: "42", x_access_token: "t", x_refresh_token: nil,
       x_token_expires_at: nil, codex_bin: "codex",
+      openrouter_api_key: "router-key",
+      openrouter_text_model: Xbookmark::Enrich::OpenRouter::DEFAULT_TEXT_MODEL,
+      openrouter_vision_model: Xbookmark::Enrich::OpenRouter::DEFAULT_VISION_MODEL,
+      openrouter_image_detail: "low",
       whisper_bin: nil, whisper_model: "base.en", qmd_bin: "qmd",
       daily_sync_time: "06:00", min_run_interval_hours: 20.0,
       env_file: nil, verbose: false
@@ -185,7 +189,7 @@ describe Xbookmark::Sync::Runner do
         }
       ]
     )
-    Xbookmark::Enrich::Codex.stubs(:new).returns(codex)
+    Xbookmark::Enrich::OpenRouter.stubs(:from_config).returns(codex)
     Xbookmark::Taxonomy::Rebuilder.any_instance.stubs(:call)
       .returns(Xbookmark::Taxonomy::Report.new(state: "clean", counts: {}))
     runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []),
@@ -328,6 +332,27 @@ describe Xbookmark::Sync::Runner do
     assert_equal "alice", rebuilt.author_handle
     assert_equal "quoted", rebuilt.quoted_tweet["text"]
     assert_equal "m1", rebuilt.media.first.media_key
+  end
+
+  it "restores the canonical stored bookmark time for cached retries" do
+    payload = {
+      "data" => [{ "id" => "1", "author_id" => "u1", "text" => "x",
+                   "created_at" => "2025-01-01T00:00:00Z", "conversation_id" => "1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    runner = described_class.new(
+      config: config, store: store, x_client: FakeXClient.new,
+      pipeline: FakePipeline.new(->(_) { raise "unused" }), registrar: registrar
+    )
+
+    bookmark = runner.send(
+      :cached_bookmark,
+      payload_json: JSON.generate(payload), bookmarked_at: "2026-08-15T10:11:12Z"
+    )
+
+    assert_equal "2026-08-15T10:11:12Z", bookmark.bookmarked_at
+    assert_equal "2025-01-01T00:00:00Z", bookmark.created_at
   end
 
   it "transitions a failure on attempt 1 to success on retry, ordered failed-first on next run" do
@@ -626,6 +651,18 @@ describe Xbookmark::Sync::Runner do
 
     out = capture_stdout { @report = runner.run(mode: :sync) }
     assert_match(/test-backfilled/, out)
+    assert_equal 1, @report.permanent_errors
+    assert_nil store.last_sync_finished_at
+  end
+
+  it "incremental sync refuses to run after a limited Birdclaw import" do
+    store.mode = Xbookmark::State::Store::MODE_BIRDCLAW_PARTIAL
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []), pipeline: pipeline, registrar: registrar)
+
+    out = capture_stdout { @report = runner.run(mode: :sync) }
+
+    assert_match(/import-birdclaw.*without --limit/, out)
     assert_equal 1, @report.permanent_errors
     assert_nil store.last_sync_finished_at
   end

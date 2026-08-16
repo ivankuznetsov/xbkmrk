@@ -8,7 +8,7 @@ Gem::Specification.new do |spec|
 
   spec.summary = "Sync X (Twitter) bookmarks into a local Obsidian-ready bookmark wiki."
   spec.description = "Ruby CLI that ingests X bookmarks into a transactional, LLM-enriched markdown bookmark wiki."
-  spec.homepage = "https://github.com/ivankuznetsov/xbookmark"
+  spec.homepage = "https://github.com/ivankuznetsov/xbkmrk"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.1"
 

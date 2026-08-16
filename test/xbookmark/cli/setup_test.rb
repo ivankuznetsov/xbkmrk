@@ -20,7 +20,6 @@ describe Xbookmark::CLI::Setup do
   before do
     Xbookmark::Paths.stubs(:project_env_path).returns("/nonexistent-project-env")
     Xbookmark::Paths.stubs(:user_env_path).returns("/nonexistent-user-env")
-    Xbookmark::CodexConfig.stubs(:new).returns(stub(remove_service_tier_override!: false))
   end
 
   def run_setup(extra = {})
@@ -34,16 +33,17 @@ describe Xbookmark::CLI::Setup do
   end
 
   it "prompts for every REQUIRED_KEY when keystore is empty" do
-    input_lines.replace(["abc", "42", "secret", ""])
+    input_lines.replace(["router-key", "abc", "42", "secret", ""])
     run_setup
     assert_equal "abc", keystore.get("X_CLIENT_ID")
     assert_equal "42", keystore.get("X_USER_ID")
     assert_equal "secret", keystore.get("X_CLIENT_SECRET")
     assert_nil keystore.get("X_REDIRECT_URI") # empty input skipped
+    assert_equal "router-key", keystore.get("OPENROUTER_API_KEY")
   end
 
   it "reads secret prompts through noecho when the input supports it" do
-    lines = ["abc\n", "42\n", "secret\n", "\n"]
+    lines = ["router-key\n", "abc\n", "42\n", "secret\n", "\n"]
     secret_input = Object.new
     secret_input.define_singleton_method(:tty?) { true }
     secret_input.define_singleton_method(:gets) { lines.shift }
@@ -57,6 +57,7 @@ describe Xbookmark::CLI::Setup do
       force_interactive: true
     }).execute
 
+    assert_equal "router-key", keystore.get("OPENROUTER_API_KEY")
     assert_equal "secret", keystore.get("X_CLIENT_SECRET")
   end
 
@@ -64,13 +65,14 @@ describe Xbookmark::CLI::Setup do
     input_lines.replace([""])
 
     error = assert_raises(Xbookmark::ConfigError) { run_setup }
-    assert_match(/X_CLIENT_ID/, error.message)
+    assert_match(/OPENROUTER_API_KEY/, error.message)
   end
 
   it "skips prompts for keys already set" do
     keystore.set("X_CLIENT_ID", "preset")
     keystore.set("X_USER_ID", "preset")
-    input_lines.replace(["", ""]) # skip optionals
+    keystore.set("OPENROUTER_API_KEY", "router-key")
+    input_lines.replace(["", ""]) # skip remaining optionals
     run_setup
     assert_includes output.string, "X_CLIENT_ID: already set (skipping)"
     assert_includes output.string, "X_USER_ID: already set (skipping)"
@@ -84,7 +86,7 @@ describe Xbookmark::CLI::Setup do
       Xbookmark::Paths.stubs(:user_env_path).returns("/nonexistent")
 
       # answers: import? yes, delete file? no, optionals empty
-      input_lines.replace(["y", "n", "", ""])
+      input_lines.replace(["y", "n", "router-key", "", ""])
       run_setup
       assert_equal "from-env", keystore.get("X_CLIENT_ID")
       assert_equal "99", keystore.get("X_USER_ID")
@@ -99,7 +101,7 @@ describe Xbookmark::CLI::Setup do
       Xbookmark::Paths.stubs(:project_env_path).returns(env_path)
       Xbookmark::Paths.stubs(:user_env_path).returns("/nonexistent")
 
-      input_lines.replace(["maybe", "abc", "42", "", ""])
+      input_lines.replace(["maybe", "router-key", "abc", "42", "", ""])
       run_setup
 
       assert_includes output.string, "no known keys found"
@@ -114,42 +116,43 @@ describe Xbookmark::CLI::Setup do
       Xbookmark::Paths.stubs(:project_env_path).returns(env_path)
       Xbookmark::Paths.stubs(:user_env_path).returns("/nonexistent")
 
-      input_lines.replace(["y", "y", "", ""])
+      input_lines.replace(["y", "y", "router-key", "", ""])
       run_setup
       refute File.file?(env_path)
     end
   end
 
   it "installs the scheduler after setup without another prompt" do
-    input_lines.replace(["abc", "42", "", ""])
+    input_lines.replace(["router-key", "abc", "42", "", ""])
     scheduler.expects(:install).returns(true)
     run_setup
   end
 
-  it "removes codex service_tier override during setup" do
-    codex_config = mock("codex config")
-    codex_config.expects(:remove_service_tier_override!).returns(true)
-    Xbookmark::CodexConfig.stubs(:new).returns(codex_config)
+  it "builds the default scheduler installer for configured X sync" do
+    keystore.set("OPENROUTER_API_KEY", "router-key")
+    keystore.set("X_CLIENT_ID", "abc")
+    keystore.set("X_USER_ID", "42")
+    input_lines.replace(["", ""])
+    config = stub("config")
+    Xbookmark::Config.expects(:load).returns(config)
+    Xbookmark::Scheduler::Installer.expects(:new).with(config: config).returns(scheduler)
 
-    input_lines.replace(["abc", "42", "", ""])
-    run_setup
-
-    assert_includes output.string, "codex service_tier: removed stale override"
+    described_class.new([], {
+      input: input, output: output, keystore: keystore, force_interactive: true
+    }).execute
   end
 
-  it "reports codex service tier setup failures without failing setup" do
-    codex_config = mock("codex config")
-    codex_config.stubs(:remove_service_tier_override!).raises(StandardError, "bad config")
-    Xbookmark::CodexConfig.stubs(:new).returns(codex_config)
-
-    input_lines.replace(["abc", "42", "", ""])
+  it "supports Birdclaw-only setup without installing the X scheduler" do
+    input_lines.replace(["router-key", "", "", "", ""])
+    scheduler.expects(:install).never
 
     assert_equal 0, run_setup
-    assert_includes output.string, "codex service_tier setup failed: bad config"
+    assert_equal "router-key", keystore.get("OPENROUTER_API_KEY")
+    assert_includes output.string, "Birdclaw-only mode"
   end
 
   it "reports scheduler installation failures without failing setup" do
-    input_lines.replace(["abc", "42", "", ""])
+    input_lines.replace(["router-key", "abc", "42", "", ""])
     scheduler.stubs(:install).raises(StandardError, "no scheduler")
 
     assert_equal 0, run_setup
@@ -189,8 +192,7 @@ describe Xbookmark::CLI::Setup do
 
   describe ".first_run_check!" do
     it "returns 0 without launching the wizard when keystore is configured" do
-      keystore.set("X_CLIENT_ID", "abc")
-      keystore.set("X_USER_ID", "42")
+      keystore.set("OPENROUTER_API_KEY", "router-key")
       input_io = StringIO.new("")
       def input_io.tty?; true; end
       out = StringIO.new
@@ -206,7 +208,7 @@ describe Xbookmark::CLI::Setup do
     end
 
     it "launches setup when required keys are missing and stdin is a tty" do
-      input_lines.replace(["abc", "42", "", ""])
+      input_lines.replace(["router-key", "", "", "", ""])
       out = StringIO.new
       config = Struct::XbookmarkConfig.new(daily_sync_time: "06:00", logs_dir: "/tmp/logs", env_file: nil)
       Xbookmark::Config.stubs(:load).returns(config)
@@ -216,7 +218,7 @@ describe Xbookmark::CLI::Setup do
       begin
         assert_equal 0, described_class.first_run_check!(input: input, output: out, keystore: keystore)
         assert_includes out.string, "first run detected"
-        assert_equal "abc", keystore.get("X_CLIENT_ID")
+        assert_equal "router-key", keystore.get("OPENROUTER_API_KEY")
       ensure
         old_test_env ? ENV["XBOOKMARK_TEST"] = old_test_env : ENV.delete("XBOOKMARK_TEST")
       end
@@ -225,7 +227,7 @@ describe Xbookmark::CLI::Setup do
     it "treats a complete env file as first-run configured" do
       Dir.mktmpdir do |dir|
         env_path = File.join(dir, ".env")
-        File.write(env_path, "X_CLIENT_ID=abc\nX_USER_ID=42\n")
+        File.write(env_path, "OPENROUTER_API_KEY=router-key\n")
         Xbookmark::Paths.stubs(:project_env_path).returns(env_path)
         Xbookmark::Paths.stubs(:user_env_path).returns("/nonexistent")
 

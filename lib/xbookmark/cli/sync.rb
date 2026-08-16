@@ -74,8 +74,22 @@ module Xbookmark
         config = Xbookmark::Config.load_offline(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
         store  = Xbookmark::State::Store.new(config.state_db_path)
 
-        report = Xbookmark::Sync::Reenricher.new(config: config, store: store, model: options[:model],
-                                                 reasoning_effort: options[:"reasoning-effort"]).call(limit: options[:limit])
+        report = Xbookmark::Sync::Reenricher.new(config: config, store: store, model: options[:model]).call(limit: options[:limit])
+        exit(report.exit_code) unless report.exit_code.zero?
+      end
+
+      # Imports already archived Birdclaw rows. This path never constructs an
+      # X client and is idempotent by tweet ID, so reruns are update-only.
+      def birdclaw_import_run
+        require_relative "../config"
+        require_relative "../birdclaw/source"
+        require_relative "../birdclaw/importer"
+        require_relative "../state/store"
+
+        config = Xbookmark::Config.load_offline(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
+        store = Xbookmark::State::Store.new(config.state_db_path)
+        source = Xbookmark::Birdclaw::Source.new(options[:db] || config.birdclaw_db_path)
+        report = Xbookmark::Birdclaw::Importer.new(config: config, store: store, source: source).call(limit: options[:limit])
         exit(report.exit_code) unless report.exit_code.zero?
       end
 

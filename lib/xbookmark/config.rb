@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
 require "dotenv"
+require_relative "enrich/defaults"
 
 module Xbookmark
   class Config
     REQUIRED_KEYS = %w[X_CLIENT_ID X_USER_ID].freeze
+    ENRICHMENT_KEYS = %w[OPENROUTER_API_KEY].freeze
 
     Struct.new(
       "XbookmarkConfig",
@@ -20,6 +22,11 @@ module Xbookmark
       :x_refresh_token,
       :x_token_expires_at,
       :codex_bin,
+      :openrouter_api_key,
+      :openrouter_text_model,
+      :openrouter_vision_model,
+      :openrouter_image_detail,
+      :birdclaw_db_path,
       :whisper_bin,
       :whisper_model,
       :qmd_bin,
@@ -42,8 +49,9 @@ module Xbookmark
                           vault_override: vault_override, verbose: verbose)
       end
 
-      def load_offline(wiki_override: nil, vault_override: nil, cwd: Dir.pwd, env: ENV.to_h.dup, verbose: false)
+      def load_offline(wiki_override: nil, vault_override: nil, cwd: Dir.pwd, env: ENV.to_h.dup, verbose: false, keystore: :auto)
         loaded_env_files = load_env_files!(cwd: cwd, env: env)
+        hydrate_from_keystore!(env, keystore: keystore)
         build_config(env, loaded_env_files: loaded_env_files, wiki_override: wiki_override,
                           vault_override: vault_override, verbose: verbose)
       end
@@ -69,6 +77,11 @@ module Xbookmark
           x_refresh_token: env["X_REFRESH_TOKEN"],
           x_token_expires_at: parse_int_or_nil(env["X_TOKEN_EXPIRES_AT"]),
           codex_bin: env["CODEX_BIN"] || "codex",
+          openrouter_api_key: first_present(env["OPENROUTER_API_KEY"], env["XBOOKMARK_OPENROUTER_KEY"]),
+          openrouter_text_model: env["OPENROUTER_TEXT_MODEL"] || Xbookmark::Enrich::Defaults::TEXT_MODEL,
+          openrouter_vision_model: env["OPENROUTER_VISION_MODEL"] || Xbookmark::Enrich::Defaults::VISION_MODEL,
+          openrouter_image_detail: env["OPENROUTER_IMAGE_DETAIL"] || Xbookmark::Enrich::Defaults::IMAGE_DETAIL,
+          birdclaw_db_path: File.expand_path(env["BIRDCLAW_DB_PATH"] || File.join(Paths.home, ".birdclaw", "birdclaw.sqlite")),
           whisper_bin: env["WHISPER_BIN"],
           whisper_model: env["WHISPER_MODEL"] || "base.en",
           qmd_bin: env["QMD_BIN"] || "qmd",

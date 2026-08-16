@@ -20,7 +20,6 @@ optdepends=(
   'ffmpeg: media transcoding for embedded video'
   'whisper-cpp: local transcription of bookmarked clips'
   'qmd: vector search over the bookmark wiki'
-  'codex: LLM enrichment of bookmark cards'
 )
 provides=('xbookmark')
 conflicts=('xbookmark-git' 'xbookmark-bin')

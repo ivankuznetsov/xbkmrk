@@ -20,6 +20,7 @@ module Xbookmark
       MODE_TEST_BACKFILLED   = "test_backfilled"
       MODE_FULLY_BACKFILLED  = "fully_backfilled"
       MODE_INCREMENTAL       = "incremental"
+      MODE_BIRDCLAW_PARTIAL  = "birdclaw_partial"
 
       attr_reader :path
 
@@ -168,6 +169,15 @@ module Xbookmark
       def already_done?(tweet_id)
         row = find_bookmark(tweet_id)
         row && row[:status] == STATUS_DONE
+      end
+
+      def tweet_ids_with_statuses(*statuses)
+        values = statuses.flatten.compact.map(&:to_s).uniq
+        return [] if values.empty?
+
+        placeholders = (["?"] * values.size).join(", ")
+        @db.execute("SELECT tweet_id FROM bookmarks WHERE status IN (#{placeholders})", values)
+          .map { |row| row["tweet_id"] }
       end
 
       def reset_to_pending!(tweet_id)

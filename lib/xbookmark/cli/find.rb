@@ -16,7 +16,9 @@ module Xbookmark
         require_relative "../config"
         require_relative "../qmd/searcher"
 
-        config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
+        config = Xbookmark::Config.load_offline(
+          wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose]
+        )
         searcher = Xbookmark::Qmd::Searcher.new(config: config)
         hits = searcher.search(query, limit: options[:limit] || 20)
         if hits.empty?

@@ -56,6 +56,24 @@ describe Xbookmark::Qmd::Searcher do
     assert_equal ["/v/1.md", "/v/2.md"], hits.map { |hit| hit[:path] }
   end
 
+  it "uses structured lexical and vector search without local generation or reranking" do
+    argv = nil
+    runner = lambda do |command|
+      argv = command
+      ["[]", "", status]
+    end
+
+    described_class.new(config: config, runner: runner).search("first\nsecond", limit: 3)
+
+    assert_equal "qmd", argv[0]
+    assert_equal "query", argv[1]
+    assert_equal "lex: first second\nvec: first second", argv[2]
+    assert_includes argv, "--no-rerank"
+    assert_equal ["--collection", "bookmarks"], argv.slice(argv.index("--collection"), 2)
+    assert_equal ["--limit", "3"], argv.slice(argv.index("--limit"), 2)
+    assert_equal ["--format", "json"], argv.slice(argv.index("--format"), 2)
+  end
+
   it "returns [] when qmd binary is missing" do
     runner = ->(_argv) { raise Errno::ENOENT }
     err = capture_stderr { @hits = described_class.new(config: config, runner: runner).search("x") }

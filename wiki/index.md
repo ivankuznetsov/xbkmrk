@@ -3,24 +3,24 @@ title: xbookmark Wiki
 type: index
 source: wiki/**/*.md
 created: 2026-05-14
-updated: 2026-06-15
+updated: 2026-08-16
 tags: [index, wiki]
 ---
 
 **TLDR**: Catalog of the LLM-maintained wiki for `xbookmark`.
 
 Page count: 11
-Updated: 2026-06-15
+Updated: 2026-08-16
 
 ## Core Pages
 
-- [[architecture]] - Runtime architecture, production-hardening state, Codex config cleanup, QMD registration, scheduling, and coverage gate.
-- [[api]] - External API, OAuth callback, X API, QMD root registration/reindexing, Codex subprocess, and Codex config-file surfaces.
+- [[architecture]] - Birdclaw/X inputs, OpenRouter routing, QMD registration, scheduling, and coverage gate.
+- [[api]] - Birdclaw SQLite, OpenRouter, OAuth callback, X API, and QMD surfaces.
 - [[commands]] - CLI command surface, fresh setup contract, first-run setup wizard, doctor fixes, taxonomy repair, install, and uninstall behavior.
 - [[data-model]] - SQLite state schema, bookmark wiki layout, statuses, modes, and transactional behavior.
-- [[dependencies]] - Ruby gem dependencies, external CLIs, Codex/QMD/Whisper tools, scheduler tools, and contributor checks.
-- [[decisions]] - Repository, workflow, runtime, setup, service-tier, and coverage decisions grounded in code/history.
-- [[active-areas]] - Production hardening state, 50-item page-size landing, local coverage gate, and service-tier follow-up.
+- [[dependencies]] - Ruby gems, OpenRouter, Birdclaw, QMD/Whisper tools, schedulers, and contributor checks.
+- [[decisions]] - Repository, update-only import, model routing, setup, and coverage decisions grounded in code/history.
+- [[active-areas]] - OpenRouter/Birdclaw cutover, local setup, pagination, and verification state.
 - [[live-production-learnings]] - Production backfill lessons, source limits, media/transcript fixes, Codex/QMD behavior, and reusable verification commands.
 
 ## Maintenance Pages

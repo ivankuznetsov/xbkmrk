@@ -26,7 +26,7 @@ describe "install.sh" do
 
   it "defaults to the publishing repo and binary install path" do
     body = File.read(script_path)
-    assert_includes body, 'XBOOKMARK_REPO="${XBOOKMARK_REPO:-ivankuznetsov/xbookmark}"'
+    assert_includes body, 'XBOOKMARK_REPO="${XBOOKMARK_REPO:-ivankuznetsov/xbkmrk}"'
     assert_includes body, 'XBOOKMARK_INSTALL_METHOD="${XBOOKMARK_INSTALL_METHOD:-binary}"'
     refute_includes body, "XBOOKMARK_FORCE_BINARY"
   end

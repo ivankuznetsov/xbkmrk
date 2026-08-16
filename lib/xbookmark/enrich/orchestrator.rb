@@ -2,7 +2,7 @@
 
 require "json"
 require "uri"
-require_relative "codex"
+require_relative "open_router"
 require_relative "link_fetcher"
 require_relative "prompt_context"
 require_relative "../render/markdown_safety"
@@ -54,8 +54,9 @@ module Xbookmark
 
       attr_writer :existing_slugs, :concept_registry
 
-      def initialize(codex:, link_fetcher: nil, existing_slugs: [], concept_registry: nil)
-        @codex = codex
+      def initialize(llm: nil, codex: nil, link_fetcher: nil, existing_slugs: [], concept_registry: nil)
+        @llm = llm || codex
+        raise ArgumentError, "llm is required" unless @llm
         @link_fetcher = link_fetcher || LinkFetcher.new
         @existing_slugs = existing_slugs
         @concept_registry = concept_registry
@@ -72,7 +73,7 @@ module Xbookmark
         final_image_paths = image_paths
         begin
           final = final_call(bookmark, transcripts: transcripts, link_blobs: link_blobs, vision: vision, image_paths: final_image_paths)
-        rescue Xbookmark::CodexError, Xbookmark::PermanentError
+        rescue Xbookmark::EnrichmentError, Xbookmark::PermanentError
           raise if Array(image_paths).empty?
 
           partial = true
@@ -109,13 +110,13 @@ module Xbookmark
 
       def summarize_topic(slug:, snippets:)
         prompt = render_template("summarize_topic.txt", { slug: slug, snippets: snippets.join("\n---\n") })
-        result = @codex.run(prompt: prompt, json_schema: { "type" => "object", "required" => %w[summary] })
+        result = @llm.run(prompt: prompt, json_schema: { "type" => "object", "required" => %w[summary] })
         result["summary"]
       end
 
       def summarize_author(handle:, snippets:)
         prompt = render_template("summarize_author.txt", { handle: handle, snippets: snippets.join("\n---\n") })
-        result = @codex.run(prompt: prompt, json_schema: { "type" => "object", "required" => %w[summary] })
+        result = @llm.run(prompt: prompt, json_schema: { "type" => "object", "required" => %w[summary] })
         result["summary"]
       end
 
@@ -140,7 +141,7 @@ module Xbookmark
 
       def vision_call(image_paths)
         prompt = render_template("vision.txt", {})
-        @codex.run(prompt: prompt, images: image_paths,
+        @llm.run(prompt: prompt, images: image_paths,
                    json_schema: { "type" => "object", "properties" => { "captions" => { "type" => "object" }, "ocr" => { "type" => "object" } } })
       end
 
@@ -183,16 +184,16 @@ module Xbookmark
                                    link_blobs: format_link_blobs(link_blobs),
                                    registry_context: registry_context(bookmark)
                                  })
-        @codex.run(prompt: prompt, images: image_paths, json_schema: FINAL_SCHEMA, timeout: timeout_for_images(image_paths))
+        @llm.run(prompt: prompt, images: image_paths, json_schema: FINAL_SCHEMA, timeout: timeout_for_images(image_paths))
       end
 
       def retry_required_fields(bookmark, **args)
         prompt_extra = "\n\nIMPORTANT: tags AND concepts arrays MUST contain at least one entry each. " \
                        "Re-derive both from the tweet, transcripts, vision, and link extracts. " \
                        "Return JSON only with the same schema."
-        @codex.run(prompt: build_retry_prompt(bookmark, **args, extra: prompt_extra), images: args[:image_paths],
+        @llm.run(prompt: build_retry_prompt(bookmark, **args, extra: prompt_extra), images: args[:image_paths],
                    json_schema: FINAL_SCHEMA, timeout: timeout_for_images(args[:image_paths]))
-      rescue Xbookmark::CodexError, Xbookmark::PermanentError => e
+      rescue Xbookmark::EnrichmentError, Xbookmark::PermanentError => e
         # Best-effort second pass — fall back to the first call's partial
         # result. A schema mismatch on the retry still leaves the original
         # response usable, but make the failure visible rather than silent.
@@ -213,7 +214,7 @@ module Xbookmark
       end
 
       def timeout_for_images(image_paths)
-        Array(image_paths).empty? ? Xbookmark::Enrich::Codex::DEFAULT_TIMEOUT : IMAGE_TIMEOUT
+        Array(image_paths).empty? ? Xbookmark::Enrich::OpenRouter::DEFAULT_TIMEOUT : IMAGE_TIMEOUT
       end
 
       def format_vision(vision)

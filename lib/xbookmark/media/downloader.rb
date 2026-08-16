@@ -80,7 +80,9 @@ module Xbookmark
           File.binwrite(dest_path, @http.call(url))
           return
         end
-        options = { open_timeout: @timeout, read_timeout: @timeout }
+        # X media URLs should be direct CDN assets. Refuse redirects so a
+        # trusted archive URL cannot bounce the downloader to a private host.
+        options = { open_timeout: @timeout, read_timeout: @timeout, max_redirects: 0 }
         options[:max_size] = @max_bytes if @max_bytes
         tempfile = Down.download(url, **options)
         FileUtils.mv(tempfile.path, dest_path)

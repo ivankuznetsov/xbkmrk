@@ -1,13 +1,13 @@
 ---
 title: API Surface
 type: api
-source: lib/xbookmark/x/auth.rb; lib/xbookmark/x/client.rb; lib/xbookmark/qmd/registrar.rb; lib/xbookmark/qmd/searcher.rb; README.md; .env.example
+source: lib/xbookmark/x/auth.rb; lib/xbookmark/x/client.rb; lib/xbookmark/birdclaw/source.rb; lib/xbookmark/enrich/open_router.rb; README.md; .env.example
 created: 2026-05-14
-updated: 2026-06-15
+updated: 2026-08-16
 tags: [api, x-api, oauth, cli]
 ---
 
-**TLDR**: `xbookmark` has no web app routes; its external surface is a CLI, X API v2 calls, a temporary local OAuth callback, and QMD registration/search/reindex subprocess calls.
+**TLDR**: `xbookmark` has no web routes; its external surface is the CLI, read-only Birdclaw SQLite input, OpenRouter chat completions, optional X API/OAuth, and QMD subprocess calls.
 
 ## Scope
 
@@ -46,21 +46,22 @@ Bookmark requests use 50-item pages and follow `meta.next_token`. Production tes
 - `Qmd::Registrar#register!` ensures the bookmark wiki root exists, invokes `qmd collection add <bookmark-wiki> --name bookmarks`, and treats that current command as already indexed.
 - If the current registration command fails, the registrar falls back to legacy `qmd register --name bookmarks --path <path>` and then indexes with `qmd index --collection bookmarks`.
 - `Qmd::Registrar#index!` invokes `qmd index --collection bookmarks`; if that indexing command fails, the registrar falls back once more to `qmd update` before warning and returning a failed status.
-- `Qmd::Searcher` invokes `qmd query --collection bookmarks --types lex,vec --limit N --json QUERY`.
+- `Qmd::Searcher` invokes QMD with explicit `lex:` and `vec:` query lines plus `--no-rerank --collection bookmarks --limit N --format json`, so search does not require QMD's optional local generation or reranking models.
 - The CLI currently prints numbered text results with score, path, and optional snippet.
 - `sync` and `taxonomy rebuild --apply` reindex after generated wiki changes. Taxonomy rebuild records the QMD reindex status in its manifest rather than rolling back file repairs when search refresh fails.
 
-## Codex Subprocess Surface
+## Birdclaw Archive Surface
 
-- `Enrich::Codex` invokes `codex exec --json` and parses JSONL event streams.
-- Current Codex emits final model text under `item.completed` events with an `item.type` of `agent_message`; xbookmark unwraps the nested `item.text` JSON.
-- Older model-message and plain JSON object output shapes remain accepted.
+- `Birdclaw::Source` opens `BIRDCLAW_DB_PATH` read-only and selects numeric rows from the `bookmarks` collection.
+- `Birdclaw::Importer` reuses the normal pipeline, skips completed IDs, and never creates an X client.
+- The import shares the wiki taxonomy lock with sync, reenrichment, and rebuild operations.
 
-## Codex Config File Surface
+## OpenRouter HTTP Surface
 
-- `Xbookmark::CodexConfig.default_path` reads `$CODEX_HOME/config.toml` when `CODEX_HOME` is set, otherwise `~/.codex/config.toml`.
-- `xbookmark setup` and non-dry-run `xbookmark install` remove only stale invalid top-level `service_tier` values before the first TOML table. Project-scoped tables such as `[projects."/tmp/app"]` and valid speed modes are preserved.
-- When the file is rewritten, xbookmark creates parent directories as needed, writes through an atomic temp-file replacement, and sets the config file mode to `0600`.
+- Endpoint: `POST https://openrouter.ai/api/v1/chat/completions`.
+- Text-only prompts use `~deepseek/deepseek-v4-flash-latest`; prompts with image data URLs use `qwen/qwen3.8-27b`.
+- Responses use OpenRouter structured output and are validated locally with the caller's JSON schema.
+- `OPENROUTER_API_KEY` is loaded from process/env files or the host keyring. There is no runtime Codex subprocess.
 
 ## Public Contract Notes
 

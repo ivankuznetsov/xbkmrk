@@ -173,7 +173,16 @@ describe Xbookmark::Sync::Reenricher do
   it "builds a default offline pipeline when none is injected" do
     Dir.mktmpdir do |vault|
       store = Xbookmark::State::Store.new(":memory:")
-      reenricher = described_class.new(config: OpenStruct.new(vault_path: vault, codex_bin: "codex"), store: store)
+      reenricher = described_class.new(
+        config: OpenStruct.new(
+          vault_path: vault,
+          openrouter_api_key: "router-key",
+          openrouter_text_model: Xbookmark::Enrich::OpenRouter::DEFAULT_TEXT_MODEL,
+          openrouter_vision_model: Xbookmark::Enrich::OpenRouter::DEFAULT_VISION_MODEL,
+          openrouter_image_detail: "low"
+        ),
+        store: store
+      )
 
       assert_instance_of described_class, reenricher
     end

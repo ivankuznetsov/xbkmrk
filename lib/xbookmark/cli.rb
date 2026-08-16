@@ -52,6 +52,13 @@ module Xbookmark
       Xbookmark::CLI::Sync.new([], options).sync_run
     end
 
+    desc "import-birdclaw", "Import new bookmarks from an existing local Birdclaw archive (no X backfill)"
+    method_option :db, type: :string, desc: "Birdclaw SQLite path (default ~/.birdclaw/birdclaw.sqlite)"
+    method_option :limit, type: :numeric, desc: "Import at most N unseen bookmarks"
+    def import_birdclaw
+      Xbookmark::CLI::Sync.new([], options).birdclaw_import_run
+    end
+
     desc "resync TWEET_ID", "Force re-enrichment of a single bookmark"
     def resync(tweet_id)
       Xbookmark::CLI::Sync.new([], options).resync_run(tweet_id)
@@ -59,10 +66,8 @@ module Xbookmark
 
     desc "reenrich", "Offline re-enrichment of existing notes under the current contract (no X fetch)"
     method_option :limit, type: :numeric, desc: "Re-enrich at most N notes (resumable; omit for all)"
-    method_option :model, type: :string, default: "gpt-5.4-mini",
-                          desc: "Codex model for re-enrichment (a mini model is plenty for this task)"
-    method_option :"reasoning-effort", type: :string, default: "low",
-                                       desc: "Codex reasoning effort (minimal|low|medium|high|xhigh); low keeps bulk calls fast"
+    method_option :model, type: :string,
+                          desc: "Override the OpenRouter text model (defaults to DeepSeek V4 Flash Latest)"
     def reenrich
       Xbookmark::CLI::Sync.new([], options).reenrich_run
     end
@@ -78,7 +83,7 @@ module Xbookmark
       Xbookmark::CLI::Find.new([], options).find_run(query.join(" "))
     end
 
-    desc "doctor", "Check that codex / whisper / qmd / X auth are wired up"
+    desc "doctor", "Check OpenRouter / whisper / qmd / X auth configuration"
     method_option :fix, type: :boolean, default: false, desc: "Prompt to run install commands for missing tools"
     def doctor
       Xbookmark::CLI::Doctor.new([], options).execute

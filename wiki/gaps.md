@@ -2,8 +2,8 @@
 
 | Area | Gap | Notes |
 |------|-----|-------|
-| Production backfill completeness | Production wiki still needs a backfill rerun with 50-item pages | Code and docs now standardize on 50-item bookmark pages. The remaining uncertainty is production data completeness after rerunning against the 4,745 IDs found by the read-only probe. |
-| Codex service-tier cleanup | Needs live setup/install verification after commit | Current code removes stale invalid top-level `service_tier` values, preserves valid speed modes, and specs cover parser/setup/install/atomic-write paths, but this refresh did not run a real setup/install against a user's live Codex config. |
+| Existing corpus location | Earlier generated bookmark repository was not discoverable during the 2026-08-16 setup | The update-only importer can seed from an existing Birdclaw SQLite archive, but it must not be described as restoring a separately generated historical wiki that has not been located. |
+| Video transcription | Local Whisper executable is optional | Image and text enrichment work through OpenRouter; video rows remain retryable when no supported local Whisper backend is installed. |
 | Post-commit diff source | Review checkout HEAD did not identify the xbookmark commit directly | On 2026-06-15, local `HEAD` was a grafted plugin-logo commit while xbookmark files appeared as untracked against that HEAD. This refresh used `origin/main..origin/feat/wiki-graph-taxonomy` at `c83d53c` plus visible source files. Confirm future post-commit refresh checkouts preserve a normal xbookmark HEAD if refreshes must inspect `HEAD` directly. |
 | Cross-project wiki | No xbookmark-specific master page found | `/home/asterio/wikis/master/wiki` exists, but 2026-05-25 searches found no `xbookmark`-specific page. `~/wikis/main/wiki`, `../wikis/master/wiki`, and `../wikis/main/wiki` did not exist. |
 
@@ -23,3 +23,4 @@
 - 2026-05-22: Media download no longer has a default 200 MB cap; large X videos are allowed to download.
 - 2026-05-22: Live OAuth, bookmark API, production scheduler, QMD, media, transcript, enrichment, and duplicate checks were validated against the production install. Durable lessons are captured in [[live-production-learnings]].
 - 2026-05-25: `bundle exec rake coverage` is now the local 100% line-coverage gate for `bin/` and `lib/`; last recorded pass was 299 examples at 100.00% (2297/2297).
+- 2026-08-16: Runtime enrichment moved from local Codex to OpenRouter with DeepSeek text routing and Qwen image routing; Birdclaw import provides an update-only path with no X backfill.

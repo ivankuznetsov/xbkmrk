@@ -3,6 +3,8 @@
 require "test_helper"
 
 require "xbookmark/cli"
+require "xbookmark/birdclaw/importer"
+require "xbookmark/birdclaw/source"
 require "xbookmark/qmd/registrar"
 require "xbookmark/qmd/searcher"
 require "xbookmark/scheduler/base"
@@ -42,6 +44,11 @@ describe Xbookmark::CLI do
       x_refresh_token: nil,
       x_token_expires_at: 123,
       codex_bin: "codex",
+      openrouter_api_key: "router-key",
+      openrouter_text_model: Xbookmark::Enrich::OpenRouter::DEFAULT_TEXT_MODEL,
+      openrouter_vision_model: Xbookmark::Enrich::OpenRouter::DEFAULT_VISION_MODEL,
+      openrouter_image_detail: "low",
+      birdclaw_db_path: "/tmp/birdclaw.sqlite",
       whisper_bin: nil,
       whisper_model: "base.en",
       qmd_bin: "qmd",
@@ -66,7 +73,7 @@ describe Xbookmark::CLI do
 
   it "lists all top-level subcommands in --help" do
     out = capture_stdout { described_class.start(%w[help]) }
-    %w[auth backfill sync find doctor install resync taxonomy].each do |cmd|
+    %w[auth backfill import-birdclaw sync find doctor install resync taxonomy].each do |cmd|
       assert_match(/^\s*\S+\s#{cmd}\b/, out)
     end
   end
@@ -148,6 +155,9 @@ describe Xbookmark::CLI do
 
     Xbookmark::CLI::Sync.expects(:new).with { |args, options| args == [] && options.is_a?(Hash) }.returns(stub(reenrich_run: nil))
     capture_stdout { described_class.start(%w[reenrich --limit 3]) }
+
+    Xbookmark::CLI::Sync.expects(:new).with { |args, options| args == [] && options.is_a?(Hash) }.returns(stub(birdclaw_import_run: nil))
+    capture_stdout { described_class.start(%w[import-birdclaw --limit 3]) }
 
     Xbookmark::CLI::Find.expects(:new).with { |args, options| args == [] && options.is_a?(Hash) }.returns(stub(find_run: nil))
     capture_stdout { described_class.start(%w[find ozempic dose]) }
@@ -434,6 +444,21 @@ describe Xbookmark::CLI do
     Xbookmark::CLI::Sync.new([], { limit: 5 }).reenrich_run
   end
 
+  it "imports the local Birdclaw archive without constructing an X client" do
+    config = test_config(state_db_path: ":memory:")
+    source = stub("birdclaw source")
+    report = Struct.new(:exit_code).new(0)
+    importer = mock("birdclaw importer")
+    importer.expects(:call).with(limit: 5).returns(report)
+    Xbookmark::Config.expects(:load_offline).returns(config)
+    Xbookmark::Birdclaw::Source.expects(:new).with("/archive/birdclaw.sqlite").returns(source)
+    Xbookmark::Birdclaw::Importer.expects(:new).with do |args|
+      args[:config] == config && args[:source] == source && args[:store].is_a?(Xbookmark::State::Store)
+    end.returns(importer)
+
+    Xbookmark::CLI::Sync.new([], { limit: 5, db: "/archive/birdclaw.sqlite" }).birdclaw_import_run
+  end
+
   it "exits non-zero when offline reenrich reports failures" do
     Xbookmark::Config.stubs(:load_offline).returns(test_config)
     Xbookmark::Sync::Reenricher.stubs(:new).returns(stub(call: Struct.new(:exit_code).new(1)))
@@ -510,7 +535,7 @@ describe Xbookmark::CLI do
   end
 
   it "prints find results with scores and snippets and reports empty matches" do
-    Xbookmark::Config.stubs(:load).returns(test_config)
+    Xbookmark::Config.expects(:load_offline).twice.returns(test_config)
     searcher = mock("searcher")
     Xbookmark::Qmd::Searcher.stubs(:new).returns(searcher)
 
@@ -526,14 +551,15 @@ describe Xbookmark::CLI do
 
   it "runs doctor checks for binaries, whisper, platform, and auth state" do
     Dir.mktmpdir do |dir|
-      %w[codex qmd ffmpeg].each do |name|
+      %w[qmd ffmpeg].each do |name|
         path = File.join(dir, name)
         File.write(path, "#!/bin/sh\n")
         File.chmod(0o755, path)
       end
       Xbookmark::Paths.stubs(:macos?).returns(false)
       Xbookmark::Paths.stubs(:linux?).returns(true)
-      Xbookmark::Config.stubs(:load).returns(test_config(whisper_bin: File.join(dir, "whisper-cli"), x_access_token: ""))
+      Xbookmark::Config.stubs(:load_offline)
+        .returns(test_config(whisper_bin: File.join(dir, "whisper-cli"), x_access_token: ""))
       Xbookmark::Transcribe::Whisper.stubs(:detect).returns(nil)
 
       out = with_env(ENV.to_h.merge("PATH" => dir)) do
@@ -541,7 +567,7 @@ describe Xbookmark::CLI do
       end
 
       assert_includes out, "platform: Linux"
-      assert_includes out, "codex: ok"
+      assert_includes out, "OpenRouter: key present"
       assert_includes out, "whisper: NOT FOUND"
       assert_includes out, "X auth: NOT logged in"
     end
@@ -550,7 +576,7 @@ describe Xbookmark::CLI do
   it "reports macOS doctor checks with missing binaries, detected whisper, and present token" do
     Xbookmark::Paths.stubs(:macos?).returns(true)
     Xbookmark::Paths.stubs(:linux?).returns(false)
-    Xbookmark::Config.stubs(:load).returns(test_config(x_access_token: "token", x_token_expires_at: nil))
+    Xbookmark::Config.stubs(:load_offline).returns(test_config(x_access_token: "token", x_token_expires_at: nil))
     Xbookmark::Transcribe::Whisper.stubs(:detect).returns("/usr/local/bin/whisper-cli")
 
     out = with_env(ENV.to_h.merge("PATH" => "/no/such/dir")) do
@@ -559,7 +585,7 @@ describe Xbookmark::CLI do
 
     assert_includes out, "platform: macOS"
     assert_includes out, "scheduler backend: launchd"
-    assert_includes out, "codex: NOT FOUND"
+    assert_includes out, "OpenRouter: key present"
     assert_includes out, "whisper: ok (/usr/local/bin/whisper-cli)"
     assert_includes out, "X auth: token present (expires_at=unknown)"
   end
@@ -568,13 +594,9 @@ describe Xbookmark::CLI do
     config = test_config
     scheduler = mock("scheduler")
     registrar = mock("registrar")
-    codex_config = mock("codex config")
     Xbookmark::Config.stubs(:load).returns(config)
     Xbookmark::Scheduler::Factory.stubs(:build).returns(scheduler)
     Xbookmark::Qmd::Registrar.stubs(:new).returns(registrar)
-    Xbookmark::CodexConfig.stubs(:new).returns(codex_config)
-
-    codex_config.expects(:remove_service_tier_override!).once.returns(false)
     scheduler.expects(:install).with(time: "07:30", dry_run: false).returns(true)
     registrar.expects(:ensure_registered!).returns(true)
     Xbookmark::CLI::Install.new([], { time: "07:30", "dry-run": false }).execute
@@ -585,24 +607,6 @@ describe Xbookmark::CLI do
 
     scheduler.expects(:uninstall).with(time: "06:00", dry_run: false).returns(true)
     Xbookmark::CLI::Install.new([], { uninstall: true, "dry-run": false }).execute
-  end
-
-  it "continues install when codex service tier cleanup fails" do
-    config = test_config
-    scheduler = mock("scheduler")
-    registrar = mock("registrar")
-    codex_config = mock("codex config")
-    Xbookmark::Config.stubs(:load).returns(config)
-    Xbookmark::Scheduler::Factory.stubs(:build).returns(scheduler)
-    Xbookmark::Qmd::Registrar.stubs(:new).returns(registrar)
-    Xbookmark::CodexConfig.stubs(:new).returns(codex_config)
-    codex_config.stubs(:remove_service_tier_override!).raises(StandardError, "bad config")
-
-    scheduler.expects(:install).with(time: "06:00", dry_run: false).returns(true)
-    registrar.expects(:ensure_registered!).returns(true)
-
-    err = capture_stderr { Xbookmark::CLI::Install.new([], { "dry-run": false }).execute }
-    assert_includes err, "codex service_tier setup failed: bad config"
   end
 
   it "routes setup and uninstall commands" do

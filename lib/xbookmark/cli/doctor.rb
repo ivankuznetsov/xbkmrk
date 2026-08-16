@@ -17,13 +17,15 @@ module Xbookmark
       def execute
         require_relative "../config"
         require_relative "../paths"
-        require_relative "../enrich/codex"
+        require_relative "../enrich/open_router"
         require_relative "../transcribe/whisper"
         require_relative "../keystore"
         require_relative "../system/runtime"
         require_relative "../system/package_manager"
 
-        config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
+        config = Xbookmark::Config.load_offline(
+          wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose]
+        )
 
         platform = Paths.macos? ? "macOS" : (Paths.linux? ? "Linux" : "unknown")
         say "platform: #{platform}"
@@ -32,9 +34,9 @@ module Xbookmark
         say "keystore: #{safe_keystore_backend}"
         say "bookmark wiki: #{config.vault_path}"
         say "state db: #{config.state_db_path}"
+        report_openrouter(config)
 
         missing = []
-        missing << "codex"   unless check_bin("codex",   config.codex_bin)
         unless whisper_ok?(config)
           missing << "whisper"
         end
@@ -57,6 +59,16 @@ module Xbookmark
       end
 
       private
+
+      def report_openrouter(config)
+        if config.openrouter_api_key.to_s.empty?
+          say "OpenRouter: key NOT FOUND (set OPENROUTER_API_KEY)"
+        else
+          say "OpenRouter: key present"
+        end
+        say "LLM text: #{config.openrouter_text_model}"
+        say "LLM images: #{config.openrouter_vision_model} (detail=#{config.openrouter_image_detail})"
+      end
 
       def safe_keystore_backend
         Xbookmark::Keystore.default.backend_name
@@ -87,6 +99,8 @@ module Xbookmark
       end
 
       def which(cmd)
+        return cmd if File.executable?(cmd.to_s) && !File.directory?(cmd.to_s)
+
         ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).each do |dir|
           full = File.join(dir, cmd)
           return full if File.executable?(full) && !File.directory?(full)
