@@ -1,6 +1,9 @@
 # Wiki Changelog
 
-Append-only log of meaningful wiki updates.
+Append-only log of all wiki operations.
+
+<!-- BEGIN GENERATED WIKI LOG FRAGMENTS -->
+<!-- END GENERATED WIKI LOG FRAGMENTS -->
 
 ## [2026-05-14T16:53:27Z] bootstrap
 
