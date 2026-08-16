@@ -3,6 +3,10 @@
 require "test_helper"
 
 describe Xbookmark::Config do
+  before do
+    Xbookmark::Paths.stubs(:user_env_path).returns("/nonexistent-xbookmark-user-env")
+  end
+
   it "loads required keys from a project .env" do
     Dir.mktmpdir do |cwd|
       File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc123\nX_USER_ID=42\n")
@@ -31,7 +35,24 @@ describe Xbookmark::Config do
       assert_nil config.x_client_id
       assert_nil config.x_user_id
       assert_equal "codex", config.codex_bin
+      assert_equal Xbookmark::Enrich::OpenRouter::DEFAULT_TEXT_MODEL, config.openrouter_text_model
+      assert_equal Xbookmark::Enrich::OpenRouter::DEFAULT_VISION_MODEL, config.openrouter_vision_model
+      assert_equal "low", config.openrouter_image_detail
       assert_equal "qmd", config.qmd_bin
+    end
+  end
+
+  it "hydrates OpenRouter credentials for offline enrichment commands" do
+    store = Xbookmark::Keystore.new(
+      backend: Xbookmark::Keystore::Memory.new("openrouter_api_key" => "stored-router-key")
+    )
+
+    Dir.mktmpdir do |cwd|
+      config = described_class.load_offline(cwd: cwd, env: {}, keystore: store)
+
+      assert_equal "stored-router-key", config.openrouter_api_key
+      assert_nil config.x_client_id
+      assert_nil config.x_user_id
     end
   end
 

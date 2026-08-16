@@ -4,7 +4,7 @@ require "yaml"
 require "date"
 
 require_relative "pipeline"
-require_relative "../enrich/codex"
+require_relative "../enrich/open_router"
 require_relative "../enrich/orchestrator"
 require_relative "../enrich/note_source"
 require_relative "../render/bookmark_renderer"
@@ -40,15 +40,10 @@ module Xbookmark
         end
       end
 
-      # Bulk extraction does not need codex's global xhigh reasoning effort,
-      # which pushes heavy notes past the per-call timeout; default to low.
-      DEFAULT_REASONING_EFFORT = "low"
-
-      def initialize(config:, store:, pipeline: nil, logger: nil, model: nil, reasoning_effort: DEFAULT_REASONING_EFFORT)
+      def initialize(config:, store:, pipeline: nil, logger: nil, model: nil)
         @config = config
         @store = store
         @model = model
-        @reasoning_effort = reasoning_effort
         @pipeline = pipeline || default_pipeline
         @logger = logger || ->(msg) { puts msg }
       end
@@ -154,8 +149,8 @@ module Xbookmark
       end
 
       def default_pipeline
-        codex = Xbookmark::Enrich::Codex.new(bin: @config.codex_bin, model: @model, reasoning_effort: @reasoning_effort)
-        orchestrator = Xbookmark::Enrich::Orchestrator.new(codex: codex, link_fetcher: NullLinkFetcher)
+        llm = Xbookmark::Enrich::OpenRouter.from_config(@config, text_model: @model)
+        orchestrator = Xbookmark::Enrich::Orchestrator.new(llm: llm, link_fetcher: NullLinkFetcher)
         renderer = Xbookmark::Render::BookmarkRenderer.new(vault_path: @config.vault_path)
         Pipeline.new(config: @config, store: @store, orchestrator: orchestrator, renderer: renderer)
       end

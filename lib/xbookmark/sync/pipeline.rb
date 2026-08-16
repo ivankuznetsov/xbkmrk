@@ -19,7 +19,7 @@ module Xbookmark
     # Per-bookmark transactional pipeline:
     # 1. media download into scratch
     # 2. whisper transcription (best-effort; missing binary => transient)
-    # 3. codex enrichment (external links -> final call)
+    # 3. OpenRouter enrichment (external links -> final call)
     # 4. atomic move of media dir + atomic .md write
     # 5. ensure aux pages exist (after the bookmark write succeeds)
     class Pipeline
@@ -119,7 +119,7 @@ module Xbookmark
       def guard(bookmark, scratch:)
         yield.tap { FileUtils.rm_rf(scratch) if scratch }
       rescue Xbookmark::TransientError, Xbookmark::RateLimited => e
-        # WhisperUnavailable, MediaError, and CodexError already inherit
+        # WhisperUnavailable, MediaError, and EnrichmentError already inherit
         # from TransientError — the rescue list above covers all of them.
         FileUtils.rm_rf(scratch) if scratch
         Outcome.new(status: :needs_retry, error: e)

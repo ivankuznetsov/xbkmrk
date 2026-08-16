@@ -50,9 +50,10 @@ class XbookmarkTest < Minitest::Spec
       XBOOKMARK_WIKI_PATH XBOOKMARK_VAULT OBSIDIAN_VAULT_PATH
       XBOOKMARK_LOGS_DIR XBOOKMARK_DAILY_TIME
       XBOOKMARK_MIN_RUN_INTERVAL_HOURS XBOOKMARK_TAXONOMY_MAINTENANCE
+      OPENROUTER_API_KEY XBOOKMARK_OPENROUTER_KEY OPENROUTER_TEXT_MODEL
+      OPENROUTER_VISION_MODEL OPENROUTER_IMAGE_DETAIL BIRDCLAW_DB_PATH
       CODEX_BIN WHISPER_BIN WHISPER_MODEL QMD_BIN PATH
     ].each { |k| @__test_envs__[k] = ENV[k]; ENV.delete(k) }
-
     require "xbookmark/keystore"
     Xbookmark::Keystore.instance_variable_set(:@default, Xbookmark::Keystore.new(backend: Xbookmark::Keystore::Memory.new))
   end

@@ -67,7 +67,9 @@ describe Xbookmark::Media::Downloader do
     tempfile.write("large")
     tempfile.flush
 
-    Down.expects(:download).with("https://x/hi.mp4", open_timeout: 30, read_timeout: 30).returns(tempfile)
+    Down.expects(:download)
+      .with("https://x/hi.mp4", open_timeout: 30, read_timeout: 30, max_redirects: 0)
+      .returns(tempfile)
 
     Dir.mktmpdir do |dir|
       described_class.new.download([video], dir)
@@ -83,7 +85,7 @@ describe Xbookmark::Media::Downloader do
     tempfile.flush
 
     Down.expects(:download)
-      .with("https://x/hi.mp4", open_timeout: 30, read_timeout: 30, max_size: 123)
+      .with("https://x/hi.mp4", open_timeout: 30, read_timeout: 30, max_redirects: 0, max_size: 123)
       .returns(tempfile)
 
     Dir.mktmpdir do |dir|

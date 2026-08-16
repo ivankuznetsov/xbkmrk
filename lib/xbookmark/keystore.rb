@@ -20,6 +20,7 @@ module Xbookmark
       x_access_token
       x_refresh_token
       x_token_expires_at
+      openrouter_api_key
     ].freeze
 
     # Map ENV-style key -> lowercase keystore account name.

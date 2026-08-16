@@ -2,13 +2,13 @@
 
 Own your X bookmarks as a local, Obsidian-ready bookmark wiki with LLM enrichment and Whisper transcription.
 
-xbookmark pulls your X (formerly Twitter) bookmarks through the official paid X API v2, writes each one to a plain markdown file with YAML frontmatter, runs an LLM enrichment pass for summaries and tags, and transcribes any linked audio or video locally with Whisper.
+xbookmark imports bookmarks from an existing local Birdclaw archive or pulls them through the official paid X API v2, writes each one to a plain markdown file with YAML frontmatter, enriches text and images through OpenRouter, and transcribes linked audio or video locally with Whisper.
 
-It is built for people who keep notes in Obsidian or any markdown-first system and are tired of X bookmarks being unsearchable and ephemeral. xbookmark writes to its own standalone bookmark wiki directory; point Obsidian at that folder when you want to browse it. Everything runs on your machine; nothing leaves it except the calls you authorize to the X API and your configured LLM provider.
+It is built for people who keep notes in Obsidian or any markdown-first system and are tired of X bookmarks being unsearchable and ephemeral. xbookmark writes to its own standalone bookmark wiki directory; point Obsidian at that folder when you want to browse it. Bookmark state and transcription stay local; enrichment sends selected bookmark context to OpenRouter.
 
 <p align="center">
-  <a href="https://github.com/ivankuznetsov/xbookmark/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/ivankuznetsov/xbookmark/ci.yml?branch=main&label=ci" alt="Build status"></a>
-  <a href="https://github.com/ivankuznetsov/xbookmark/releases/latest"><img src="https://img.shields.io/github/v/release/ivankuznetsov/xbookmark?label=release" alt="Release"></a>
+  <a href="https://github.com/ivankuznetsov/xbkmrk/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/ivankuznetsov/xbkmrk/ci.yml?branch=main&label=ci" alt="Build status"></a>
+  <a href="https://github.com/ivankuznetsov/xbkmrk/releases/latest"><img src="https://img.shields.io/github/v/release/ivankuznetsov/xbkmrk?label=release" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License"></a>
   <img src="https://img.shields.io/badge/ruby-%E2%89%A5%203.1-red" alt="Ruby version">
 </p>
@@ -20,13 +20,20 @@ It is built for people who keep notes in Obsidian or any markdown-first system a
 Clone, install dependencies, and copy the env template:
 
 ```bash
-git clone https://github.com/ivankuznetsov/xbookmark.git
-cd xbookmark
+git clone https://github.com/ivankuznetsov/xbkmrk.git
+cd xbkmrk
 bundle install
 cp .env.example .env
 ```
 
-Stop here and edit `.env` to fill in `X_CLIENT_ID`, `X_USER_ID`, and `XBOOKMARK_WIKI_PATH` — see [Configuration → Set up X API access](#set-up-x-api-access) for how to obtain the X values. Then run:
+Stop here and edit `.env` to fill in `OPENROUTER_API_KEY` and `XBOOKMARK_WIKI_PATH`. If you already have a Birdclaw archive, import it directly without X credentials or a historical X backfill:
+
+```bash
+bin/xbookmark import-birdclaw --db ~/.birdclaw/birdclaw.sqlite
+bin/xbookmark find 'rails'
+```
+
+To fetch bookmarks from X instead, also fill in `X_CLIENT_ID` and `X_USER_ID`, then run:
 
 ```bash
 bin/xbookmark auth login
@@ -47,13 +54,13 @@ concepts/rails.md                                                "Rails"        
 If you use Claude Code, Cursor, Codex, ChatGPT, or any other AI assistant, paste the prompt below and let it install and configure xbookmark for you. Agents with shell access run the steps; chat-only agents walk you through them.
 
 ```text
-Install and configure xbookmark from https://github.com/ivankuznetsov/xbookmark on this machine.
+Install and configure xbookmark from https://github.com/ivankuznetsov/xbkmrk on this machine.
 
 1. Read README.md from that repo and follow the Installation section that matches my operating system.
-2. Follow the Configuration section: copy .env.example to .env, ask me for my X developer Client ID, numeric X user ID, and bookmark wiki path, and fill them in. Leave X_CLIENT_SECRET blank unless I say my X app is a confidential client.
-3. Run `bin/xbookmark auth login` so I can sign in to X in my browser.
-4. Install the daily scheduler with `bin/xbookmark install`.
-5. Verify with `bin/xbookmark --version` and `bin/xbookmark auth status`, then report the output.
+2. Copy .env.example to .env and configure my OpenRouter key, bookmark wiki path, and existing Birdclaw database path.
+3. Run `bin/xbookmark import-birdclaw`; do not run an X backfill when an extracted archive is available.
+4. Configure X OAuth and install the daily scheduler only if I ask for future direct X syncs.
+5. Verify with `bin/xbookmark --version` and `bin/xbookmark doctor`, then report the output.
 
 Stop and ask me before installing system packages with sudo, and before any step that would overwrite a file in my home directory.
 ```
@@ -66,7 +73,7 @@ If you prefer to run the steps yourself, jump to [Installation](#installation) a
 - Daily incremental ingest via a built-in scheduler (systemd on Linux, launchd on macOS).
 - Obsidian-friendly markdown output with YAML frontmatter and stable file naming.
 - Full-text search over the bookmark wiki via a local QMD index (a markdown full-text search engine).
-- LLM enrichment (summary, tags) via the [`codex`](https://github.com/openai/codex) CLI.
+- OpenRouter enrichment with `~deepseek/deepseek-v4-flash-latest` for text and `qwen/qwen3.8-27b` for image-bearing bookmarks.
 - Local Whisper transcription of audio and video linked from a bookmark, with
   LLM-produced transcript summaries and readable dialogue-style formatting.
 - Obsidian graph landing pages for authors, canonical concepts, concept hierarchy, real multi-bookmark threads, and explicit post lists on topic/concept pages.
@@ -83,13 +90,12 @@ xbookmark ships pre-built single-file binaries for `x86_64-linux` and
 | Homebrew (macOS, arm64) | `brew install ivankuznetsov/tap/xbookmark` |
 | AUR (Arch / Manjaro) | `yay -S xbookmark` |
 | `.deb` (Debian / Ubuntu, x86_64) | `sudo apt install ./xbookmark_<ver>_amd64.deb` |
-| Generic `curl \| sh` | `curl -fsSL https://github.com/ivankuznetsov/xbookmark/raw/main/install.sh \| sh` |
+| Generic `curl \| sh` | `curl -fsSL https://github.com/ivankuznetsov/xbkmrk/raw/main/install.sh \| sh` |
 
 After install, run `xbookmark` once — it auto-launches the interactive
-setup wizard, which writes your X API credentials to the host keystore
-(libsecret on Linux, login Keychain on macOS), removes stale invalid Codex
-service-tier values that can break scheduled runs, and enables the daily sync
-timer.
+setup wizard, which writes the required OpenRouter key to the host keystore
+(libsecret on Linux, login Keychain on macOS). X credentials are optional;
+the wizard enables the daily X sync timer only when both X identifiers are set.
 
 ### Upgrades
 
@@ -105,7 +111,7 @@ xbookmark uninstall --purge      # remove scheduler unit, keystore entries, conf
 brew uninstall xbookmark         # macOS
 sudo pacman -R xbookmark         # Arch
 sudo apt remove xbookmark        # Debian/Ubuntu
-sh <(curl -fsSL https://github.com/ivankuznetsov/xbookmark/raw/main/uninstall.sh)  # curl|sh path
+sh <(curl -fsSL https://github.com/ivankuznetsov/xbkmrk/raw/main/uninstall.sh)  # curl|sh path
 ```
 
 Running the package-manager removal before `xbookmark uninstall
@@ -135,7 +141,6 @@ launch the wizard:
 
 - `ffmpeg` — media extraction.
 - `whisper.cpp` / `faster-whisper` — local transcription.
-- `codex` — LLM enrichment (`https://github.com/openai/codex`).
 - `qmd` — vector search over the bookmark wiki.
 
 Run `xbookmark doctor` to see which ones the binary can find, and
@@ -148,8 +153,8 @@ If you prefer a source build, clone the repo and `bundle install`
 against Ruby 3.1 or newer.  Source builds skip Tebako entirely.
 
 ```bash
-git clone https://github.com/ivankuznetsov/xbookmark.git
-cd xbookmark
+git clone https://github.com/ivankuznetsov/xbkmrk.git
+cd xbkmrk
 bundle install
 bin/xbookmark --version
 ```
@@ -190,9 +195,9 @@ CLI is ready to ship. Before merging to `main`, fetch the current
 and add a dated estimate for Basic-tier dollars per 1000 bookmarks; until
 then, use the published rate and quota on that page for your own estimate.
 
-### codex authentication
+### OpenRouter authentication
 
-Install the [`codex` CLI](https://github.com/openai/codex), run `codex login` once, point `CODEX_PROFILE` at the profile you want xbookmark to use, and confirm with `codex whoami`. `xbookmark setup` and `xbookmark install` remove stale invalid global `service_tier` values from `~/.codex/config.toml` so scheduled enrichment is not blocked by old config, while preserving intentional valid Codex speed modes.
+Set `OPENROUTER_API_KEY` in a gitignored `.env`, or enter it when `xbookmark setup` prompts so the host keyring stores it. Text-only work uses `~deepseek/deepseek-v4-flash-latest`; any prompt with downloaded images uses `qwen/qwen3.8-27b`. Both model IDs are configurable through `.env`. No local Codex process or OpenAI credential is required.
 
 ### Whisper backend
 
@@ -200,7 +205,7 @@ Set `WHISPER_BACKEND` to either `whisper.cpp` (default, fast on CPU, one-time C+
 
 ### Aux page summaries
 
-Every enriched bookmark links to author and canonical concept landing pages so Obsidian's graph works during large backfills. Concept pages include a `## Posts` section with direct links to matching source notes, so browsing does not depend on Obsidian's backlinks panel. Taxonomy rebuilds migrate legacy `topics/` and `entities/` links into `concepts/`, prune the old landing pages, and suppress author-handle concepts that would duplicate the author page. Real thread pages are written only when local state shows a multi-bookmark conversation. Author landing pages are lightweight placeholders by default to keep the main bookmark pipeline fast. Set `XBOOKMARK_AUX_SUMMARIES=true` if you also want xbookmark to ask Codex for separate author summaries during sync.
+Every enriched bookmark links to author and canonical concept landing pages so Obsidian's graph works during large backfills. Concept pages include a `## Posts` section with direct links to matching source notes, so browsing does not depend on Obsidian's backlinks panel. Taxonomy rebuilds migrate legacy `topics/` and `entities/` links into `concepts/`, prune the old landing pages, and suppress author-handle concepts that would duplicate the author page. Real thread pages are written only when local state shows a multi-bookmark conversation. Author landing pages are lightweight placeholders by default to keep the main bookmark pipeline fast. Set `XBOOKMARK_AUX_SUMMARIES=true` to ask the configured OpenRouter text model for separate author summaries during sync.
 
 ### Bookmark wiki path
 
@@ -263,6 +268,19 @@ larger page sizes up to 100, but live production testing showed that requesting
 Backfill is idempotent. Rerunning it skips bookmarks already marked `done`, and
 bookmark/media paths are deterministic with readable bookmark filenames that
 retain the raw tweet ID suffix.
+
+### import-birdclaw
+
+Update the wiki from bookmarks already extracted into a local Birdclaw archive:
+
+```bash
+bin/xbookmark import-birdclaw [--db ~/.birdclaw/birdclaw.sqlite] [--limit N]
+```
+
+This command never constructs an X API client and never performs a historical X collection.
+It reads Birdclaw's SQLite database in read-only mode, skips IDs
+already marked `done`, and processes only new or previously failed local rows.
+Rerun the same command whenever Birdclaw has collected more bookmarks.
 
 ### find
 
@@ -350,13 +368,13 @@ Every subcommand accepts `--help`. The top-level `bin/xbookmark --help` lists al
 
 ## How it works
 
-xbookmark talks to the X API v2 to fetch your bookmarks, writes each one as a readable markdown source note with YAML frontmatter into its bookmark wiki, then runs an enrichment pass (LLM summaries, tags, and reusable concept candidates via the default `codex` driver) and, for any linked audio or video, a local Whisper transcription. The taxonomy normalizer turns concept candidates into canonical pages with broader links and nested tag facets. A QMD index over the bookmark wiki gives you fast full-text search through `bin/xbookmark find`.
+xbookmark reads an existing Birdclaw archive or fetches updates through X API v2, writes each bookmark as a readable markdown source note with YAML frontmatter, then runs OpenRouter enrichment: DeepSeek V4 Flash Latest for text-only prompts and Qwen 3.8 27B for prompts containing images. Linked audio or video can be transcribed locally with Whisper. The taxonomy normalizer turns concept candidates into canonical pages with broader links and nested tag facets. A QMD index over the bookmark wiki gives you fast full-text search through `bin/xbookmark find`.
 
 ```text
-X API v2 -> Ingest -> Enrich -> Bookmark wiki -> QMD index
-              |          ^                              |
-              +-> Whisper -+                           v
-                  media                         bin/xbookmark find
+Birdclaw SQLite or X API -> Ingest -> OpenRouter -> Bookmark wiki -> QMD index
+                              |           ^                         |
+                              +-> Whisper                          v
+                                  media                    bin/xbookmark find
 ```
 
 ## Obsidian integration
@@ -439,13 +457,13 @@ If X is unreachable or the saved OAuth refresh token is rejected during a schedu
 ## FAQ
 
 **How much will this cost?**
-xbookmark uses the official paid X API; see [What this will cost](#what-this-will-cost) in Configuration. Local LLM enrichment and Whisper transcription are free per-call, but you pay for whatever provider you point `codex` at.
+xbookmark uses the official paid X API only for direct X fetches; importing an existing Birdclaw archive avoids those fetches. OpenRouter bills model usage, while local Whisper transcription has no per-call provider fee.
 
 **Whisper transcription is slow.**
 The default is `WHISPER_MODEL=base.en`. xbookmark extracts downloaded video audio with `ffmpeg`, runs whisper.cpp with up to 8 CPU threads by default, and extends the subprocess timeout for long videos based on their duration. For faster runs, set `WHISPER_THREADS` to a higher value your machine can spare, switch to a smaller accepted model such as `tiny.en`, or switch backend to `faster-whisper` and run it on a GPU. The [whisper.cpp build docs](https://github.com/ggml-org/whisper.cpp#quick-start) cover Metal, CUDA, and OpenBLAS acceleration.
 
-**codex auth expired.**
-Run `codex login` again, then re-run `bin/xbookmark sync` or `bin/xbookmark backfill --limit 100` — bookmarks left without `enriched_at` will be retried on the next pass.
+**OpenRouter authentication failed.**
+Refresh `OPENROUTER_API_KEY` in the active keyring or gitignored env file, then rerun `bin/xbookmark import-birdclaw` or `bin/xbookmark sync`; bookmarks left without `enriched_at` are retried.
 
 **X API rate-limited me.**
 `backfill` respects the published `bookmark.read` rate limits but a long backfill can still hit the current rate-limit window. Lower `--limit` and re-run later, or schedule a daily ingest instead. The X API [rate-limit reference](https://docs.x.com/x-api/fundamentals/rate-limits) on `docs.x.com` lists the current numbers.
@@ -496,7 +514,7 @@ Link any related issue in the PR description.
 
 ## Credits
 
-xbookmark builds on the [`codex`](https://github.com/openai/codex) CLI for enrichment, [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and [faster-whisper](https://github.com/SYSTRAN/faster-whisper) for local transcription, QMD for markdown search, [Obsidian](https://obsidian.md) for browsing the bookmark wiki, and the official X API.
+xbookmark uses [OpenRouter](https://openrouter.ai/) with DeepSeek and Qwen models for enrichment, [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and [faster-whisper](https://github.com/SYSTRAN/faster-whisper) for local transcription, QMD for markdown search, [Obsidian](https://obsidian.md) for browsing the bookmark wiki, Birdclaw for local extracted bookmark input, and the official X API for optional direct syncs.
 
 ## Security
 

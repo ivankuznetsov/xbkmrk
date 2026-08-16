@@ -40,9 +40,8 @@ module Xbookmark
         "ffmpeg"      => { default: "ffmpeg" },
         "whisper"     => { brew: "whisper-cpp", pacman: "whisper-cpp" },
         "secret-tool" => { pacman: "libsecret", apt: "libsecret-tools", dnf: "libsecret", zypper: "libsecret-tools" },
-        # qmd / codex have no standard package; users install manually.
-        "qmd"         => {},
-        "codex"       => {}
+        # qmd has no standard package; users install it manually.
+        "qmd"         => {}
       }.freeze
 
       def package_name(tool, manager)

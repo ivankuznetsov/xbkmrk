@@ -7,7 +7,7 @@ require_relative "report"
 require_relative "pipeline"
 require_relative "../x/client"
 require_relative "../x/expansions"
-require_relative "../enrich/codex"
+require_relative "../enrich/open_router"
 require_relative "../enrich/orchestrator"
 require_relative "../render/bookmark_renderer"
 require_relative "../qmd/registrar"
@@ -125,9 +125,9 @@ module Xbookmark
         return true if candidates.empty?
 
         registry = Xbookmark::Taxonomy::Registry.from_vault(@config.vault_path, store: @store)
-        codex = Xbookmark::Enrich::Codex.new(bin: @config.codex_bin)
+        llm = Xbookmark::Enrich::OpenRouter.from_config(@config)
         Xbookmark::Taxonomy::Curator.new(
-          codex: codex,
+          llm: llm,
           registry: registry,
           store: @store,
           timeout: TAXONOMY_CURATION_TIMEOUT_SECONDS
@@ -158,8 +158,8 @@ module Xbookmark
       end
 
       def default_orchestrator
-        codex = Xbookmark::Enrich::Codex.new(bin: @config.codex_bin)
-        Xbookmark::Enrich::Orchestrator.new(codex: codex)
+        llm = Xbookmark::Enrich::OpenRouter.from_config(@config)
+        Xbookmark::Enrich::Orchestrator.new(llm: llm)
       end
 
       def skip_due_to_recent?
@@ -206,6 +206,11 @@ module Xbookmark
         end
         if @store.mode == Xbookmark::State::Store::MODE_TEST_BACKFILLED
           puts "[xbookmark] bookmark wiki was test-backfilled. Run `xbookmark backfill` (no --limit) to ingest the rest."
+          report.permanent_errors += 1
+          return
+        end
+        if @store.mode == Xbookmark::State::Store::MODE_BIRDCLAW_PARTIAL
+          puts "[xbookmark] Birdclaw archive was partially imported. Run `xbookmark import-birdclaw` without --limit first."
           report.permanent_errors += 1
           return
         end
@@ -319,7 +324,9 @@ module Xbookmark
         payload = cached_payload(row[:payload_json])
         return nil unless payload
 
-        Xbookmark::X::Expansions.new(payload).bookmarks.first
+        bookmark = Xbookmark::X::Expansions.new(payload).bookmarks.first
+        bookmark.bookmarked_at = row[:bookmarked_at] if bookmark && row[:bookmarked_at]
+        bookmark
       end
 
       def fetch_bookmark(tweet_id)

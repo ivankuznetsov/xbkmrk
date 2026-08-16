@@ -11,7 +11,7 @@ module Xbookmark
     # Deterministic taxonomy curation layer. `curate` normalizes candidates,
     # gates low-confidence concepts as blocked conflicts, and (when a store is
     # given) persists both the concept row and an audit entry in
-    # `curator_decisions`. Scheduled maintenance may provide a Codex runner for
+    # `curator_decisions`. Scheduled maintenance may provide an LLM client for
     # LLM curation; when that runner is unavailable or returns invalid output,
     # this falls back to deterministic normalization so local maintenance still
     # progresses offline.
@@ -41,8 +41,8 @@ module Xbookmark
         }
       }.freeze
 
-      def initialize(codex: nil, registry: Registry.new, normalizer: nil, store: nil, timeout: nil)
-        @codex = codex
+      def initialize(llm: nil, codex: nil, registry: Registry.new, normalizer: nil, store: nil, timeout: nil)
+        @llm = llm || codex
         @registry = registry
         @normalizer = normalizer || Normalizer.new(registry: registry)
         @store = store
@@ -93,11 +93,11 @@ module Xbookmark
       end
 
       def llm_decisions(candidates)
-        return nil unless @codex
+        return nil unless @llm
 
         kwargs = { prompt: prompt_for(candidates), json_schema: DECISION_SCHEMA }
         kwargs[:timeout] = @timeout if @timeout
-        response = @codex.run(**kwargs)
+        response = @llm.run(**kwargs)
         decisions = Array(response["decisions"]).filter_map { |decision| decision_from_llm(decision) }
         decisions.empty? ? nil : decisions
       rescue StandardError => e

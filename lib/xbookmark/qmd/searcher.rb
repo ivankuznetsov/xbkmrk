@@ -14,11 +14,13 @@ module Xbookmark
 
       # Returns array of { path:, score:, snippet: }.
       def search(query, limit: 20)
+        query_document = structured_query(query)
         argv = [@config.qmd_bin, "query",
+                query_document,
+                "--no-rerank",
                 "--collection", Registrar::COLLECTION_NAME,
-                "--types", "lex,vec",
                 "--limit", limit.to_s,
-                "--json", query]
+                "--format", "json"]
 
         out, err, status = capture(argv)
         unless status_success?(status)
@@ -43,6 +45,11 @@ module Xbookmark
 
       def status_success?(status)
         status.respond_to?(:success?) ? status.success? : status == 0
+      end
+
+      def structured_query(query)
+        text = query.to_s.gsub(/[\r\n]+/, " ").strip
+        "lex: #{text}\nvec: #{text}"
       end
 
       def parse(raw)

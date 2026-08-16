@@ -12,6 +12,7 @@ describe Xbookmark::CLI::Doctor do
   before do
     ENV["X_CLIENT_ID"] = "abc"
     ENV["X_USER_ID"]   = "42"
+    ENV["OPENROUTER_API_KEY"] = "router-key"
   end
 
   def run_doctor(opts = {})
@@ -26,6 +27,22 @@ describe Xbookmark::CLI::Doctor do
     assert_match(/platform: /, out)
     assert_match(/^ruby: /, out)
     assert_match(/^keystore: /, out)
+    assert_includes out, "OpenRouter: key present"
+    assert_includes out, Xbookmark::Enrich::OpenRouter::DEFAULT_TEXT_MODEL
+    assert_includes out, Xbookmark::Enrich::OpenRouter::DEFAULT_VISION_MODEL
+  end
+
+  it "reports a missing OpenRouter key" do
+    ENV.delete("OPENROUTER_API_KEY")
+
+    assert_includes run_doctor, "OpenRouter: key NOT FOUND"
+  end
+
+  it "runs before optional X credentials are configured" do
+    ENV.delete("X_CLIENT_ID")
+    ENV.delete("X_USER_ID")
+
+    assert_includes run_doctor, "X auth: NOT logged in"
   end
 
   it "reports system Ruby when not running under tebako" do
@@ -70,17 +87,15 @@ describe Xbookmark::CLI::Doctor do
 
   it "prompts before running fix commands and skips declined commands" do
     out = StringIO.new
-    input = StringIO.new("yes\nno\nyes\n")
+    input = StringIO.new("no\nyes\n")
     doctor = described_class.new([], fix: true, output: out, input: input)
     doctor.stubs(:which).returns(nil)
     Xbookmark::Transcribe::Whisper.stubs(:detect).returns(nil)
     Xbookmark::System::PackageManager.stubs(:detect).returns(:pacman)
-    Xbookmark::System::PackageManager.stubs(:install_command).with("codex", manager: :pacman).returns(["echo", "codex"])
     Xbookmark::System::PackageManager.stubs(:install_command).with("whisper", manager: :pacman).returns(["echo", "whisper"])
     Xbookmark::System::PackageManager.stubs(:install_command).with("qmd", manager: :pacman).returns(nil)
     Xbookmark::System::PackageManager.stubs(:install_command).with("ffmpeg", manager: :pacman).returns(["echo", "ffmpeg"])
 
-    doctor.expects(:system).with("echo", "codex").returns(true)
     doctor.expects(:system).with("echo", "ffmpeg").returns(true)
 
     doctor.execute
@@ -94,6 +109,15 @@ describe Xbookmark::CLI::Doctor do
     Xbookmark::Transcribe::Whisper.stubs(:detect).returns("/usr/bin/whisper")
     out = run_doctor
     refute_match(/Missing tools:/, out)
+  end
+
+  it "accepts an absolute executable path" do
+    Tempfile.create("xbookmark-doctor") do |file|
+      File.chmod(0o755, file.path)
+      doctor = described_class.new([], output: StringIO.new, input: StringIO.new)
+
+      assert_equal file.path, doctor.send(:which, file.path)
+    end
   end
 end
 

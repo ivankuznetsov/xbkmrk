@@ -2,6 +2,7 @@
 
 require "test_helper"
 
+require "xbookmark/enrich/codex" # legacy adapter used only as an in-memory test double
 require "xbookmark/enrich/orchestrator"
 require "xbookmark/x/bookmark"
 

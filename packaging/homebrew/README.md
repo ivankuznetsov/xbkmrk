@@ -22,5 +22,5 @@ The placeholders in the template are:
 | placeholder    | source                                             |
 |----------------|----------------------------------------------------|
 | `__VERSION__`  | `github.ref_name` with the leading `v` stripped    |
-| `__REPO__`     | `github.repository` (e.g. `ivankuznetsov/xbookmark`) |
+| `__REPO__`     | `github.repository` (e.g. `ivankuznetsov/xbkmrk`) |
 | `__SHA256__`   | sha256 of the `arm64-darwin` Tebako binary         |

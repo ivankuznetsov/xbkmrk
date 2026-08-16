@@ -19,7 +19,8 @@ module Xbookmark
   class SourceUnavailable < Error; end
   class MediaError < TransientError; end
   class WhisperUnavailable < TransientError; end
-  class CodexError < TransientError; end
+  class EnrichmentError < TransientError; end
+  CodexError = EnrichmentError # compatibility for callers of the former local-Codex adapter
   class UnsupportedPlatform < Error; end
 end
 

@@ -2,10 +2,10 @@
 # xbookmark installer — pure POSIX sh, no bashisms.
 #
 # Usage:
-#   curl -fsSL https://github.com/ivankuznetsov/xbookmark/raw/main/install.sh | sh
+#   curl -fsSL https://github.com/ivankuznetsov/xbkmrk/raw/main/install.sh | sh
 #
 # Or with overrides:
-#   XBOOKMARK_TAG=v1.2.3 XBOOKMARK_REPO=ivankuznetsov/xbookmark sh install.sh
+#   XBOOKMARK_TAG=v1.2.3 XBOOKMARK_REPO=ivankuznetsov/xbkmrk sh install.sh
 #
 # Strategy:
 #   1. Detect arch (x86_64-linux or arm64-darwin); bail otherwise.
@@ -18,7 +18,7 @@
 
 set -eu
 
-XBOOKMARK_REPO="${XBOOKMARK_REPO:-ivankuznetsov/xbookmark}"
+XBOOKMARK_REPO="${XBOOKMARK_REPO:-ivankuznetsov/xbkmrk}"
 XBOOKMARK_TAG="${XBOOKMARK_TAG:-latest}"
 XBOOKMARK_PREFIX="${XBOOKMARK_PREFIX:-$HOME/.local}"
 XBOOKMARK_RELEASE_BASE="${XBOOKMARK_RELEASE_BASE:-https://github.com/${XBOOKMARK_REPO}/releases}"
